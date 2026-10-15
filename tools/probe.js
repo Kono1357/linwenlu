@@ -785,6 +785,29 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
+    // ㉛ 设定自动收录：静默入库，不问不提示
+    report.steps.push({
+      step: 'autoset', check: await cdp.eval(`(function(){
+      try {
+        Store.setting.all().slice().forEach(function(s){ Store.setting.remove(s.id); });
+        var before = Store.setting.all().length;
+        // 模拟"刚写完一段"：直接调用静默收录（用没进过忽略名单的名字）
+        ChatView.absorbNames('陆沉推开门。白露抬头看了他一眼。陆沉没说话。白露也没说话。陆沉走了。');
+        var after = Store.setting.all().length;
+        var kinds = Store.setting.all().map(function(s){ return s.name + '[' + s.kind + ']'; });
+        // 地名要能按后缀认出来
+        ChatView.absorbNames('陆沉推开门。青石巷那边起了雾。陆沉走了两步。青石巷很静。陆沉停下。');
+        var kinds2 = Store.setting.all().map(function(s){ return s.name + '[' + s.kind + ']'; });
+        return {
+          入库前: before,
+          入库后: after,
+          收进来的: kinds.join('、'),
+          认出地点: kinds2.join('、'),
+          没弹任何窗: document.getElementById('sheet').hidden
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {

@@ -122,11 +122,14 @@ const WorldView = (() => {
     </div>`;
   }
 
-  /* ── 让 AI 把一条设定写厚（只依据正文原句，不许编） ── */
-  async function enrich(id, opts = {}) {
+  /* ── 静默把一条设定补完整 ──
+     作者要的是"先立住人再写剧情"，所以这件事不该让他看见：
+     没有按钮、没有弹窗、没有进度条，写完之后他自己去设定页看就行。 */
+  async function fill(id) {
     const s = Store.setting.all().find((x) => x.id === id);
     if (!s) return null;
-    if (!Store.config.ready()) { App.toast('先配置模型（右上 ⚙）'); return null; }
+    if (s.desc && s.desc.trim()) return null;         // 已有内容不动
+    if (!Store.config.ready()) return null;            // 没配模型就安静跳过
     try {
       let acc = '';
       const txt = await AI.generate({
@@ -134,43 +137,25 @@ const WorldView = (() => {
         onDelta: (p) => { acc += p; },
       });
       const out = (txt || acc).trim();
-      if (!out) throw new Error('没有返回内容');
-      const merged = s.desc && s.desc.trim() ? (s.desc.trim() + '\n' + out) : out;
-      Store.setting.update(id, { desc: merged });
-      if (!opts.silent) { render(); App.toast('已补全「' + s.name + '」', 2200); }
+      if (!out) return null;
+      Store.setting.update(id, { desc: out, auto: true });
       return out;
     } catch (e) {
-      if (!opts.silent) App.toast('补全失败：' + (e && e.message || e), 3400);
+      console.warn('[设定] 自动补全失败（不影响写作）', e);
       return null;
     }
   }
 
-  /** 把「有正文佐证、但说明还空着」的条目批量补一遍 */
-  async function enrichAllEmpty() {
-    const targets = Store.setting.all().filter((s) => !s.desc.trim() && (s.quotes || []).length);
-    if (!targets.length) return App.toast('没有需要补的条目');
-    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
-    App.sheet('补全说明', `
-      <div class="field__hint" style="margin-bottom:12px">共 ${targets.length} 条待补。每条调用一次模型，可以随时停。</div>
-      <div class="tidyview" id="enOut" style="min-height:120px"></div>
-      <button class="btn btn--ghost" id="enStop" style="margin-top:12px">停止</button>
-    `, (r) => {
-      let stop = false;
-      const out = r.querySelector('#enOut');
-      r.querySelector('#enStop').onclick = () => { stop = true; App.closeSheet(); };
-      (async () => {
-        let done = 0;
-        for (const s of targets) {
-          if (stop) break;
-          out.textContent = `正在补：${s.name}（${done + 1}/${targets.length}）\n\n` + out.textContent.trim();
-          await enrich(s.id, { silent: true });
-          done++;
-        }
-        App.closeSheet();
-        render();
-        App.toast(`已补全 ${done} 条`, 2400);
-      })();
-    });
+  /** 后台把还没有说明的条目补上，一次最多几条，避免一次烧太多 */
+  async function fillMissing(limit = 3) {
+    if (!Store.config.ready()) return 0;
+    const targets = Store.setting.all().filter((s) => !(s.desc || '').trim()).slice(0, limit);
+    let n = 0;
+    for (const s of targets) {
+      if (await fill(s.id)) n++;
+    }
+    if (n) render();
+    return n;
   }
 
   /* ── 编辑面板 ── */
@@ -224,14 +209,10 @@ const WorldView = (() => {
       </div>
       <div class="field">
         <label class="field__label">说明</label>
-        <textarea class="textarea" id="stDesc" placeholder="越具体越好：外貌、脾气、口癖、和主角的关系">${esc(s ? s.desc : '')}</textarea>
+        <textarea class="textarea" id="stDesc" style="min-height:150px"
+          placeholder="外貌、脾气、口癖、和主角的关系……">${esc(s ? s.desc : '')}</textarea>
+        <div class="field__hint">新条目入库时会自动写好；这里随时可以自己改。</div>
       </div>
-      ${(s && s.quotes && s.quotes.length) ? `
-        <div class="field">
-          <label class="field__label">正文佐证（写的时候自动收的）</label>
-          <div class="quotebox" id="stQuotes">${s.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>
-        </div>` : ''}
-      ${s ? `<button class="btn btn--ghost" id="stEnrich" style="margin-bottom:8px">✦ 让 AI 补全说明</button>` : ''}
       <button class="btn" id="stSave">${s ? '保存' : '添加'}</button>
       ${s ? '<button class="btn btn--danger" id="stDel" style="margin-top:8px">删除</button>' : ''}
     `, (r) => {
@@ -244,20 +225,8 @@ const WorldView = (() => {
         if (s) Store.setting.update(s.id, patch); else Store.setting.add(patch);
         App.closeSheet(); render(); App.toast(s ? '已保存' : '已添加');
       };
-      const en = r.querySelector('#stEnrich');
-      if (en) en.onclick = async () => {
-        const ta = r.querySelector('#stDesc');
-        Store.setting.update(s.id, { desc: ta.value.trim() });   // 先把手上改的存下
-        en.disabled = true; en.textContent = '补全中…';
-        const before = ta.value.trim();
-        const out = await enrich(s.id, { silent: true });
-        if (out) {
-          ta.value = before ? before + '\n' + out : out;
-          ta.scrollTop = ta.scrollHeight;
-          App.toast('已补全，可继续编辑');
-        }
-        en.disabled = false; en.textContent = '✦ 让 AI 补全说明';
-      };
+      const en = r.querySelector('#stEnrich');   // 旧版按钮，现在不再提供
+      if (en) en.remove();
       if (s) r.querySelector('#stDel').onclick = () => {
         if (!confirm('删除这条设定？')) return;
         Store.setting.remove(s.id); App.closeSheet(); render(); App.toast('已删除');
@@ -357,5 +326,5 @@ const WorldView = (() => {
     render();
   }
 
-  return { init, render, setPick, enrich, enrichAllEmpty };
+  return { init, render, setPick, fill, fillMissing };
 })();

@@ -105,6 +105,19 @@ const App = (() => {
         </div>
       </div>
 
+      <div class="sec-title">设定</div>
+      <label class="pickrow">
+        <input type="checkbox" id="cfgAutoSet" ${c.autoSetting === false ? '' : 'checked'}>
+        <span class="pickrow__k">后台自动收录设定并写完整说明</span>
+      </label>
+      <div class="field__hint">
+        写到新的人物/地点时自动入库并把说明写全，过程不打扰你 —— 写完自己去设定页看就行。<br>
+        人物 → 外貌、脾气、口癖、和主角的关系<br>
+        地点 → 位置环境、不同时段的样子、气氛<br>
+        物件 → 外形材质、来历、作用<br>
+        规则 → 内容、适用范围、限制、代价
+      </div>
+
       <div class="sec-title">外观</div>
       <label class="pickrow">
         <input type="radio" name="theme" value="light" ${Store.get().config.theme === 'dark' ? '' : 'checked'}>
@@ -169,6 +182,7 @@ const App = (() => {
           theme: th ? th.value : 'light',
           deai: g('#cfgDeai') ? g('#cfgDeai').checked : true,
           deaiRules: g('#cfgDeaiRules') ? g('#cfgDeaiRules').value.trim() : '',
+          autoSetting: g('#cfgAutoSet') ? g('#cfgAutoSet').checked : true,
         });
         applyTheme();
         closeSheet(); ChatView.hint(); toast('已保存');
@@ -563,19 +577,16 @@ const App = (() => {
       return;
     }
     // world
-    const emptyCount = Store.setting.all().filter((s) => !s.desc.trim() && (s.quotes || []).length).length;
     sheet('世界线与设定', `
-      <button class="navrow" id="vaEnrichAll">
-        <span class="navrow__k">补全空说明</span>
-        <span class="navrow__v">${emptyCount ? emptyCount + ' 条待补' : '没有待补的'}</span>
-        <span class="navrow__a">›</span>
-      </button>
       <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
-      <button class="navrow" id="vaIgnored"><span class="navrow__k">忽略名单</span><span class="navrow__v">${Store.setting.ignoredNames().length} 个名字不再询问</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaIgnored"><span class="navrow__k">忽略名单</span><span class="navrow__v">${Store.setting.ignoredNames().length} 个名字不再收</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
+      <div class="field__hint" style="margin-top:14px">
+        写到新的人物或地点时，系统会在后台自动收录并把说明写完整，不需要你操作。
+        不想要这个行为，可以在设置里关掉。
+      </div>
     `, (r) => {
-      r.querySelector('#vaEnrichAll').onclick = () => { closeSheet(); WorldView.enrichAllEmpty(); };
       r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
       r.querySelector('#vaWorldExp').onclick = () => {

@@ -37,6 +37,7 @@ const Store = (() => {
       theme: 'light',
       deai: true,          // 每次生成都注入「去 AI 味铁律」
       deaiRules: '',       // 作者自己追加的禁令（会拼在铁律后面）
+      autoSetting: true,   // 写到新人物/地点时，后台自动收录并把说明写完整
     };
   }
 

@@ -509,9 +509,8 @@ const ChatView = (() => {
           App.toast(`已写进 ${ch.title}${added ? ` · 顺带补了 ${added} 条设定佐证` : ''}`, 2400);
         }
 
-        // 顺手认一下新名字 —— 只做建议，不自动入库
-        const names = AI.findNewNames(m.text);
-        if (names.length) setTimeout(() => openNameSuggest(names), 420);
+        // 静默吸收新名字并补全设定 —— 作者不需要知道这个过程
+        absorbNames(m.text);
       };
 
       r.querySelectorAll('.cm-opt').forEach((b) => b.onclick = () => doCommit(b.dataset.k));
@@ -529,68 +528,34 @@ const ChatView = (() => {
     Store.chat.attach(m.id, ch.id);
     if (ReadView) ReadView.refresh();
     App.toast('已自动写进 ' + ch.title + '（可在设置里关掉）', 2400);
-    const names = AI.findNewNames(m.text);
-    if (names.length) setTimeout(() => openNameSuggest(names), 900);
+    absorbNames(m.text);
   }
 
-  /* ── 新名字入库：连原句一起收进去，设定才有肉 ── */
-  function openNameSuggest(names) {
-    App.sheet('发现新名字', `
-      <div class="field__hint" style="margin-bottom:12px">
-        这些名字在刚才那段里反复出现。<br>
-        入库时会<b>把它们出现过的原句一并存成「正文佐证」</b>——以后要把设定写厚，就从这些句子里长。
-      </div>
-      ${names.map((n, i) => `
-        <div class="nameblock">
-          <div class="namerow">
-            <input type="checkbox" data-nm="${i}" checked style="width:17px;height:17px;accent-color:var(--gold)">
-            <span class="namerow__k">${esc(n.name)}</span>
-            <span class="namerow__n">${n.n} 处</span>
-            <select class="select" data-nk="${i}">
-              <option>人物</option><option>地点</option><option>物件</option><option>规则</option><option>设定</option>
-            </select>
-          </div>
-          ${(n.quotes && n.quotes.length)
-        ? `<div class="namequote">${n.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>`
-        : ''}
-        </div>`).join('')}
-      <label class="pickrow" style="border-bottom:none;margin-top:10px">
-        <input type="checkbox" id="nmEnrich" checked>
-        <span class="pickrow__k" style="font-size:13px">入库后让 AI 把说明也补全</span>
-      </label>
-      <button class="btn" id="nmSave" style="margin-top:14px">存进设定</button>
-      <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用（以后别再问这些名字）</button>
-    `, (r) => {
-      r.querySelector('#nmSkip').onclick = () => {
-        names.forEach((x) => Store.setting.ignoreName(x.name));
-        App.closeSheet();
-        if (WorldView) WorldView.render();
-        App.toast('已加入忽略名单，以后不再问', 2400);
-      };
-      r.querySelector('#nmSave').onclick = () => {
-        const wantEnrich = r.querySelector('#nmEnrich') && r.querySelector('#nmEnrich').checked;
-        const ids = [];
-        names.forEach((x, i) => {
-          const cb = r.querySelector(`[data-nm="${i}"]`);
-          if (!cb || !cb.checked) return;
-          const kind = r.querySelector(`[data-nk="${i}"]`).value;
-          const s = Store.setting.add({ kind, name: x.name, desc: '', quotes: x.quotes || [] });
-          ids.push(s.id);
-        });
-        App.closeSheet();
-        if (WorldView) WorldView.render();
-        if (!ids.length) return App.toast('没有新增');
-        App.toast(`已存进设定 ${ids.length} 条${wantEnrich ? '，正在补全说明…' : ''}`, 2600);
-        if (wantEnrich && typeof WorldView !== 'undefined' && WorldView) {
-          (async () => {
-            for (const id of ids) await WorldView.enrich(id, { silent: true });
-            WorldView.render();
-            App.toast(`说明已补全 ${ids.length} 条`, 2400);
-          })();
-        }
-      };
-    });
+  /* ── 新名字：静默吸收 ──
+     作者要的是"先立住人、再写剧情"，所以入库与补全都不打扰他：
+     不弹窗、不 toast、不问要不要保存。他写完自己去设定页看就行。 */
+  function absorbNames(text) {
+    if (Store.get().config.autoSetting === false) return;
+    let names = [];
+    try { names = AI.findNewNames(text); } catch (_) { return; }
+    if (!names.length) return;
+
+    const PLACE = /(村|镇|城|街|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|路|道|谷|原|岛|洲|关|驿|站|楼)$/;
+    const ids = names.slice(0, 4).map((x) => Store.setting.add({
+      kind: PLACE.test(x.name) ? '地点' : '人物',
+      name: x.name,
+      desc: '',
+      auto: true,
+    }).id);
+
+    if (typeof WorldView !== 'undefined' && WorldView) {
+      (async () => {
+        for (const id of ids) await WorldView.fill(id);
+        WorldView.render();
+      })();
+    }
   }
+
 
   /* ── 发送 ── */
   async function send(askOverride, modeOverride) {
@@ -846,5 +811,6 @@ const ChatView = (() => {
   return {
     init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
     toggleFind, openContext, openSegments, setReplyTo, setBaseText, clearReplyTo,
+    absorbNames,
   };
 })();
