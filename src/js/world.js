@@ -122,6 +122,57 @@ const WorldView = (() => {
     </div>`;
   }
 
+  /* ── 让 AI 把一条设定写厚（只依据正文原句，不许编） ── */
+  async function enrich(id, opts = {}) {
+    const s = Store.setting.all().find((x) => x.id === id);
+    if (!s) return null;
+    if (!Store.config.ready()) { App.toast('先配置模型（右上 ⚙）'); return null; }
+    try {
+      let acc = '';
+      const txt = await AI.generate({
+        messages: AI.buildEnrichMessages(s),
+        onDelta: (p) => { acc += p; },
+      });
+      const out = (txt || acc).trim();
+      if (!out) throw new Error('没有返回内容');
+      const merged = s.desc && s.desc.trim() ? (s.desc.trim() + '\n' + out) : out;
+      Store.setting.update(id, { desc: merged });
+      if (!opts.silent) { render(); App.toast('已补全「' + s.name + '」', 2200); }
+      return out;
+    } catch (e) {
+      if (!opts.silent) App.toast('补全失败：' + (e && e.message || e), 3400);
+      return null;
+    }
+  }
+
+  /** 把「有正文佐证、但说明还空着」的条目批量补一遍 */
+  async function enrichAllEmpty() {
+    const targets = Store.setting.all().filter((s) => !s.desc.trim() && (s.quotes || []).length);
+    if (!targets.length) return App.toast('没有需要补的条目');
+    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
+    App.sheet('补全说明', `
+      <div class="field__hint" style="margin-bottom:12px">共 ${targets.length} 条待补。每条调用一次模型，可以随时停。</div>
+      <div class="tidyview" id="enOut" style="min-height:120px"></div>
+      <button class="btn btn--ghost" id="enStop" style="margin-top:12px">停止</button>
+    `, (r) => {
+      let stop = false;
+      const out = r.querySelector('#enOut');
+      r.querySelector('#enStop').onclick = () => { stop = true; App.closeSheet(); };
+      (async () => {
+        let done = 0;
+        for (const s of targets) {
+          if (stop) break;
+          out.textContent = `正在补：${s.name}（${done + 1}/${targets.length}）\n\n` + out.textContent.trim();
+          await enrich(s.id, { silent: true });
+          done++;
+        }
+        App.closeSheet();
+        render();
+        App.toast(`已补全 ${done} 条`, 2400);
+      })();
+    });
+  }
+
   /* ── 编辑面板 ── */
   function editLine(id) {
     const l = id ? Store.line.all().find((x) => x.id === id) : null;
@@ -179,8 +230,8 @@ const WorldView = (() => {
         <div class="field">
           <label class="field__label">正文佐证（写的时候自动收的）</label>
           <div class="quotebox" id="stQuotes">${s.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>
-          <button class="btn btn--ghost" id="stToDesc" style="margin-top:8px">拿这些句子起草说明</button>
         </div>` : ''}
+      ${s ? `<button class="btn btn--ghost" id="stEnrich" style="margin-bottom:8px">✦ 让 AI 补全说明</button>` : ''}
       <button class="btn" id="stSave">${s ? '保存' : '添加'}</button>
       ${s ? '<button class="btn btn--danger" id="stDel" style="margin-top:8px">删除</button>' : ''}
     `, (r) => {
@@ -193,13 +244,19 @@ const WorldView = (() => {
         if (s) Store.setting.update(s.id, patch); else Store.setting.add(patch);
         App.closeSheet(); render(); App.toast(s ? '已保存' : '已添加');
       };
-      const toDesc = r.querySelector('#stToDesc');
-      if (toDesc) toDesc.onclick = () => {
+      const en = r.querySelector('#stEnrich');
+      if (en) en.onclick = async () => {
         const ta = r.querySelector('#stDesc');
-        const cur = ta.value.trim();
-        const draft = (s.quotes || []).map((q) => q.replace(/[。！？]$/, '')).join('；');
-        ta.value = cur ? cur + '\n' + draft : draft;
-        ta.focus();
+        Store.setting.update(s.id, { desc: ta.value.trim() });   // 先把手上改的存下
+        en.disabled = true; en.textContent = '补全中…';
+        const before = ta.value.trim();
+        const out = await enrich(s.id, { silent: true });
+        if (out) {
+          ta.value = before ? before + '\n' + out : out;
+          ta.scrollTop = ta.scrollHeight;
+          App.toast('已补全，可继续编辑');
+        }
+        en.disabled = false; en.textContent = '✦ 让 AI 补全说明';
       };
       if (s) r.querySelector('#stDel').onclick = () => {
         if (!confirm('删除这条设定？')) return;
@@ -300,5 +357,5 @@ const WorldView = (() => {
     render();
   }
 
-  return { init, render, setPick };
+  return { init, render, setPick, enrich, enrichAllEmpty };
 })();

@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-15 23:48 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 01:54 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -108,9 +108,22 @@ body {
   font-size: 15px;
   line-height: 1.6;
   display: flex; flex-direction: column;
-  height: 100dvh; min-height: 100vh;
+  height: 100vh;          /* 老浏览器兜底 */
+  height: 100dvh;         /* 移动端地址栏收缩时不跳 */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* 移动端：所有可点元素都不许有 300ms 延迟，也不许双击缩放 */
+button, a, [role="button"], input, select, textarea, label {
+  touch-action: manipulation;
+}
+/* 触摸反馈：手机上必须有"按下去"的感觉 */
+.mini-btn:active, .icon-btn:active, .chip-btn:active, .navrow:active,
+.chapter-item:active, .card:active, .seg__btn:active, .navchap:active,
+.tab:active, .btn:active, .pickrow:active {
+  transform: scale(.985);
+  transition-duration: .06s;
 }
 
 button, input, textarea, select {
@@ -157,9 +170,10 @@ button { cursor: pointer; }
 .icon-btn--key:hover { background: var(--accent-soft); }
 
 .mini-btn {
-  padding: 6px 12px; border-radius: var(--r);
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 38px; padding: 8px 14px; border-radius: var(--r);
   background: var(--surface); color: var(--ink-2);
-  font-size: 12.5px; white-space: nowrap;
+  font-size: 13px; white-space: nowrap; line-height: 1.2;
   border: 1px solid var(--line-2);
   transition: all .15s var(--ease);
 }
@@ -627,9 +641,11 @@ input[type="number"] { font-family: var(--mono); }
 .chips { display: flex; gap: 6px; overflow-x: auto; padding: 9px 0 2px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
 .chip-btn {
-  flex: 0 0 auto; padding: 5px 13px; border-radius: var(--r-pill);
+  flex: 0 0 auto; min-height: 34px;
+  display: inline-flex; align-items: center;
+  padding: 7px 14px; border-radius: var(--r-pill);
   background: var(--surface); border: 1px solid var(--line);
-  color: var(--ink-3); font-size: 12px; white-space: nowrap;
+  color: var(--ink-3); font-size: 12.5px; white-space: nowrap;
   transition: all .15s var(--ease);
 }
 .chip-btn:hover { border-color: var(--line-2); color: var(--ink-2); }
@@ -837,9 +853,36 @@ body.is-stream .reader__head { display: none; }
   .chat__flow { padding: 16px 13px 8px; }
   .selbar { bottom: 12px; }
   .card__acts { opacity: 1; }
+
+  /* iOS 有一条硬规矩：输入框字号 < 16px，聚焦时会把整页放大。
+     这是"网页在手机上像网页"的头号原因，所以这里必须顶到 16px。 */
+  input, textarea, select, .input, .textarea, .select,
+  .composer textarea, .input--sm {
+    font-size: 16px !important;
+  }
+  /* 顶栏按钮与工具条在小屏上给足手指空间 */
+  .icon-btn { width: 42px; height: 42px; }
+  .reader__head { padding: 10px 12px; gap: 8px; }
+  .reader__tools { gap: 5px; }
+  .reader__tools .mini-btn { padding: 8px 11px; }
+  .chat__headActs { gap: 5px; }
+  .seg__btn { padding: 9px 20px; }
+  /* 抽屉在手机上从底部上来，拇指够得着 */
+  .sheet__panel {
+    top: auto; left: 0; right: 0; bottom: 0;
+    width: 100%; max-height: 88dvh;
+    border-left: none; border-top: 1px solid var(--line-2);
+    border-radius: 18px 18px 0 0;
+    animation: sheetUp .24s var(--ease);
+  }
+  @keyframes sheetUp { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+  .sheet__head { border-radius: 18px 18px 0 0; }
+  .sheet__body { max-height: calc(88dvh - 60px); }
+  /* 正文选中后工具条不挡字 */
+  .selbar { max-width: calc(100% - 16px); }
 }
 </style>
-<meta name="build" content="2026-10-15 23:48">
+<meta name="build" content="2026-10-16 01:54">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -985,13 +1028,16 @@ body.is-stream .reader__head { display: none; }
 /* ─── js/store.js ─── */
 /* ════════════════════════════════════════════
    临文录 · 数据层
-   单一真源 = 内存里的 state；持久化 = localStorage + 导出 JSON
-   原则：坏数据只降级不崩；任何写入都发变更事件
+   现在支持多本书：每本书各自独立的章节 / 设定 / 世界线 / 对话。
+   配置（模型、主题等）是全局的，跨书共用。
+
+   对外 API 与单书时期保持一致（chapter / setting / line / chat 操作的都是"当前这本书"），
+   所以上层视图代码不需要改动。
    ════════════════════════════════════════════ */
 
 const Store = (() => {
   const KEY = 'linwenlu.db.v1';
-  const SCHEMA = 1;
+  const SCHEMA = 2;
 
   const listeners = new Set();
   let state = null;
@@ -1003,104 +1049,169 @@ const Store = (() => {
   const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
   const arr = (v) => (Array.isArray(v) ? v : []);
 
-  function blank() {
+  function blankConfig() {
     return {
-      schema: SCHEMA,
-      book: { title: '未命名作品', genre: '', desc: '' },
+      apiBase: 'https://api.deepseek.com/v1',
+      apiKey: '',
+      model: 'deepseek-chat',
+      temperature: 0.9,
+      style: '冷峻、白描、少形容词；对话不解释情绪；每段一到三句。',
+      ctxSettings: 12,
+      ctxPrev: 1,
+      ctxTail: 1200,
+      commitMode: 'ask',      // ask（每次问）| auto（自动续接）
+      lastCommit: 'append',
+      targetWords: 800,
+      theme: 'light',
+    };
+  }
+
+  function blankBook(title) {
+    return {
+      id: uid(),
+      title: title || '未命名作品',
+      genre: '',
+      desc: '',
       chapters: [],
       settings: [],
       lines: [],
       chat: [],
-      config: {
-        apiBase: 'https://api.deepseek.com/v1',
-        apiKey: '',
-        model: 'deepseek-chat',
-        temperature: 0.9,
-        style: '冷峻、白描、少形容词；对话不解释情绪；每段一到三句。',
-        ctxSettings: 12,
-        ctxPrev: 1,
-        ctxTail: 1200,
-        commitMode: 'ask',      // ask（每次问）| auto（自动续接）
-        lastCommit: 'append',   // 上次选的写入方式，下次排在第一位
-        targetWords: 800,       // 每次生成的目标字数（0 = 不要求）
-        theme: 'light',         // light（纸感）| dark（夜色）
-      },
+      ignored: [],          // 用户拒绝过的名字（每本书独立）
+      createdAt: Date.now(),
+      at: Date.now(),
     };
   }
 
-  /* ── 规格化：任何来源的数据都要能安全落地 ── */
-  function normalize(raw) {
-    const base = blank();
-    if (!raw || typeof raw !== 'object') return base;
+  function blank() {
+    const b = blankBook();
+    return { schema: SCHEMA, books: [b], activeBookId: b.id, config: blankConfig() };
+  }
 
-    const out = base;
-    if (raw.book && typeof raw.book === 'object') {
-      out.book.title = str(raw.book.title, base.book.title) || base.book.title;
-      out.book.genre = str(raw.book.genre);
-      out.book.desc = str(raw.book.desc);
-    }
-    Object.assign(out.config, raw.config && typeof raw.config === 'object' ? raw.config : {});
+  /* ── 规格化 ── */
+  function normChapter(c, i) {
+    const drafts = arr(c && c.drafts)
+      .map((d) => ({
+        id: str(d && d.id) || uid(),
+        ver: num(d && d.ver, 1),
+        text: str(d && d.text),
+        source: str(d && d.source, '手写'),
+        at: num(d && d.at, Date.now()),
+      }))
+      .filter((d) => d.text.trim() !== '');
+    drafts.sort((a, b) => a.ver - b.ver);
+    const activeId = drafts.some((d) => d.id === (c && c.activeId))
+      ? c.activeId
+      : (drafts.length ? drafts[drafts.length - 1].id : null);
+    return {
+      id: str(c && c.id) || uid(),
+      no: num(c && c.no, i + 1),
+      title: str(c && c.title) || `第${num(c && c.no, i + 1)}章`,
+      drafts, activeId,
+      at: num(c && c.at, Date.now()),
+    };
+  }
 
-    out.chapters = arr(raw.chapters).map((c, i) => {
-      const drafts = arr(c && c.drafts)
-        .map((d) => ({
-          id: str(d && d.id) || uid(),
-          ver: num(d && d.ver, 1),
-          text: str(d && d.text),
-          source: str(d && d.source, '手写'),
-          at: num(d && d.at, Date.now()),
-        }))
-        .filter((d) => d.text.trim() !== '');
-      drafts.sort((a, b) => a.ver - b.ver);
-      const activeId = drafts.some((d) => d.id === (c && c.activeId))
-        ? c.activeId
-        : (drafts.length ? drafts[drafts.length - 1].id : null);
-      return {
-        id: str(c && c.id) || uid(),
-        no: num(c && c.no, i + 1),
-        title: str(c && c.title) || `第${num(c && c.no, i + 1)}章`,
-        drafts,
-        activeId,
-        at: num(c && c.at, Date.now()),
-      };
-    });
-    out.chapters.sort((a, b) => a.no - b.no);
-
-    out.settings = arr(raw.settings).map((s) => ({
+  function normSetting(s) {
+    return {
       id: str(s && s.id) || uid(),
       kind: str(s && s.kind, '设定'),
       name: str(s && s.name, '未命名'),
       desc: str(s && s.desc),
       quotes: arr(s && s.quotes).map(String).filter(Boolean).slice(0, 6),
       at: num(s && s.at, Date.now()),
-    }));
+    };
+  }
 
-    out.lines = arr(raw.lines).map((l) => ({
+  function normLine(l) {
+    return {
       id: str(l && l.id) || uid(),
       name: str(l && l.name, '未命名'),
       desc: str(l && l.desc),
       at: str(l && l.at, ''),
       status: str(l && l.status, '进行中'),
       at2: num(l && l.at2, Date.now()),
-    }));
+    };
+  }
 
-    out.chat = arr(raw.chat)
-      .map((m) => ({
-        id: str(m && m.id) || uid(),
-        role: m && m.role === 'me' ? 'me' : (m && m.role === 'note' ? 'note' : 'ai'),
-        text: str(m && m.text),
-        at: num(m && m.at, Date.now()),
-        chapterId: m && m.chapterId ? str(m.chapterId) : null,
-        clipped: !!(m && m.clipped),
-      }))
-      .filter((m) => m.text !== '');
+  function normMsg(m) {
+    return {
+      id: str(m && m.id) || uid(),
+      role: m && m.role === 'me' ? 'me' : (m && m.role === 'note' ? 'note' : 'ai'),
+      text: str(m && m.text),
+      at: num(m && m.at, Date.now()),
+      chapterId: m && m.chapterId ? str(m.chapterId) : null,
+      clipped: !!(m && m.clipped),
+    };
+  }
 
-    // 「上次写到哪」也要跟着存档走，否则导入后这个位置就丢了
-    if (raw.__lastOpened && typeof raw.__lastOpened === 'object' && raw.__lastOpened.id) {
-      out.__lastOpened = { id: str(raw.__lastOpened.id), at: num(raw.__lastOpened.at, Date.now()) };
+  function normBook(b) {
+    const out = blankBook(str(b && b.title, '未命名作品') || '未命名作品');
+    out.id = str(b && b.id) || out.id;
+    out.genre = str(b && b.genre);
+    out.desc = str(b && b.desc);
+    out.createdAt = num(b && (b.createdAt || b.at), Date.now());
+    out.at = num(b && b.at, Date.now());
+    out.chapters = arr(b && b.chapters).map(normChapter);
+    out.chapters.sort((a, b2) => a.no - b2.no);
+    out.settings = arr(b && b.settings).map(normSetting);
+    out.lines = arr(b && b.lines).map(normLine);
+    out.chat = arr(b && b.chat).map(normMsg).filter((m) => m.text !== '');
+    out.ignored = arr(b && b.ignored).map(String).filter(Boolean).slice(0, 500);
+    return out;
+  }
+
+  function normalize(raw) {
+    const base = blank();
+    if (!raw || typeof raw !== 'object') return base;
+
+    const out = base;
+    Object.assign(out.config, raw.config && typeof raw.config === 'object' ? raw.config : {});
+
+    if (raw.schema >= 2 && arr(raw.books).length) {
+      // 新结构
+      out.books = arr(raw.books).map(normBook);
+      const want = str(raw.activeBookId);
+      out.activeBookId = out.books.some((b) => b.id === want) ? want : out.books[0].id;
+    } else if (arr(raw.chapters).length || arr(raw.settings).length || arr(raw.lines).length || arr(raw.chat).length) {
+      // 老的单书存档 → 包成第一本书
+      const b = normBook({
+        title: (raw.book && raw.book.title) || '未命名作品',
+        genre: raw.book && raw.book.genre,
+        desc: raw.book && raw.book.desc,
+        chapters: raw.chapters, settings: raw.settings, lines: raw.lines,
+        chat: raw.chat, ignored: raw.ignored,
+      });
+      out.books = [b];
+      out.activeBookId = b.id;
+      if (raw.__lastOpened && raw.__lastOpened.id) {
+        b.__lastOpened = { id: str(raw.__lastOpened.id), at: num(raw.__lastOpened.at, Date.now()) };
+      }
+    } else {
+      // 完全空的存档
+      if (raw.book && typeof raw.book === 'object') {
+        out.books[0].title = str(raw.book.title, '未命名作品') || '未命名作品';
+        out.books[0].genre = str(raw.book.genre);
+        out.books[0].desc = str(raw.book.desc);
+      }
+    }
+
+    if (raw.__lastOpened && raw.__lastOpened.id && out.books[0] && !out.books[0].__lastOpened) {
+      out.books[0].__lastOpened = { id: str(raw.__lastOpened.id), at: num(raw.__lastOpened.at, Date.now()) };
     }
 
     return out;
+  }
+
+  /* ── 当前书 ── */
+  function book() {
+    if (!state.books.length) {
+      const b = blankBook();
+      state.books.push(b);
+      state.activeBookId = b.id;
+    }
+    let b = state.books.find((x) => x.id === state.activeBookId);
+    if (!b) { b = state.books[0]; state.activeBookId = b.id; }
+    return b;
   }
 
   /* ── 持久化 ── */
@@ -1137,18 +1248,75 @@ const Store = (() => {
       try { fn(type, detail); } catch (e) { console.error(e); }
     });
   }
-
-  function touch(type, detail) { save(); emit(type, detail); }
+  function touch(type, detail) { book().at = Date.now(); save(); emit(type, detail); }
   function on(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
   /* ── 查询 ── */
   const get = () => state;
 
+  /* ── 书 ── */
+  const books = {
+    all: () => state.books,
+    current: book,
+    currentId: () => book().id,
+    create({ title, genre = '', desc = '' } = {}) {
+      const n = state.books.length + 1;
+      const b = blankBook(title || `第 ${n} 本`);
+      b.genre = genre; b.desc = desc;
+      state.books.push(b);
+      state.activeBookId = b.id;
+      touch('book-create', b);
+      return b;
+    },
+    switchTo(id) {
+      if (!state.books.some((b) => b.id === id)) return null;
+      state.activeBookId = id;
+      touch('book-switch', { id });
+      return book();
+    },
+    update(id, patch) {
+      const b = state.books.find((x) => x.id === id);
+      if (!b) return null;
+      Object.assign(b, patch);
+      touch('book-update', b);
+      return b;
+    },
+    remove(id) {
+      if (state.books.length <= 1) return false;   // 至少留一本
+      const i = state.books.findIndex((b) => b.id === id);
+      if (i < 0) return false;
+      state.books.splice(i, 1);
+      if (state.activeBookId === id) state.activeBookId = state.books[0].id;
+      touch('book-remove', { id });
+      return true;
+    },
+    /** 从另一本书拷设定过来（新书要不要沿用旧设定，交给用户决定） */
+    copySettingsFrom(fromId, kinds) {
+      const src = state.books.find((b) => b.id === fromId);
+      if (!src) return 0;
+      const dst = book();
+      const want = arr(kinds);
+      let n = 0;
+      src.settings.forEach((s) => {
+        if (want.length && !want.includes(s.kind)) return;
+        if (dst.settings.some((x) => x.name === s.name && x.kind === s.kind)) return;
+        dst.settings.push({ ...s, id: uid(), at: Date.now() });
+        n++;
+      });
+      touch('book-copy', { from: fromId, n });
+      return n;
+    },
+  };
+
+  /* ── 章节 ── */
   const chapter = {
-    all: () => state.chapters,
-    by(id) { return state.chapters.find((c) => c.id === id) || null; },
-    byNo(no) { return state.chapters.find((c) => c.no === no) || null; },
-    active() { return chapter.by(state.__activeChapter) || state.chapters[state.chapters.length - 1] || null; },
+    all: () => book().chapters,
+    by(id) { return book().chapters.find((c) => c.id === id) || null; },
+    byNo(no) { return book().chapters.find((c) => c.no === no) || null; },
+    active() {
+      const b = book();
+      return chapter.by(b.__activeChapter) || b.chapters[b.chapters.length - 1] || null;
+    },
     currentDraft(c) {
       if (!c) return null;
       return c.drafts.find((d) => d.id === c.activeId) || c.drafts[c.drafts.length - 1] || null;
@@ -1158,21 +1326,16 @@ const Store = (() => {
       return d ? d.text : '';
     },
     add({ title, text = '', source = '手写' } = {}) {
-      const no = state.chapters.reduce((m, c) => Math.max(m, c.no), 0) + 1;
-      const c = {
-        id: uid(), no,
-        title: title || `第${no}章`,
-        drafts: [],
-        activeId: null,
-        at: Date.now(),
-      };
+      const b = book();
+      const no = b.chapters.reduce((m, c) => Math.max(m, c.no), 0) + 1;
+      const c = { id: uid(), no, title: title || `第${no}章`, drafts: [], activeId: null, at: Date.now() };
       if (text.trim()) {
         const d = { id: uid(), ver: 1, text, source, at: Date.now() };
         c.drafts.push(d);
         c.activeId = d.id;
       }
-      state.chapters.push(c);
-      state.chapters.sort((a, b) => a.no - b.no);
+      b.chapters.push(c);
+      b.chapters.sort((x, y) => x.no - y.no);
       touch('chapter-add', c);
       return c;
     },
@@ -1184,14 +1347,14 @@ const Store = (() => {
       return c;
     },
     remove(id) {
-      const i = state.chapters.findIndex((c) => c.id === id);
+      const b = book();
+      const i = b.chapters.findIndex((c) => c.id === id);
       if (i < 0) return false;
-      state.chapters.splice(i, 1);
-      if (state.__activeChapter === id) state.__activeChapter = null;
+      b.chapters.splice(i, 1);
+      if (b.__activeChapter === id) b.__activeChapter = null;
       touch('chapter-remove', { id });
       return true;
     },
-    /** 追加一个新版本（平行稿），并把它设为当前 */
     newDraft(id, text, source = 'AI') {
       const c = chapter.by(id);
       if (!c || !text.trim()) return null;
@@ -1202,7 +1365,6 @@ const Store = (() => {
       touch('draft-add', { chapter: c, draft: d });
       return d;
     },
-    /** 覆盖当前版本 */
     setDraftText(id, text) {
       const c = chapter.by(id);
       if (!c) return null;
@@ -1232,27 +1394,43 @@ const Store = (() => {
       return true;
     },
     setActive(id) {
-      state.__activeChapter = id || null;
-      if (id) state.__lastOpened = { id, at: Date.now() };
+      const b = book();
+      b.__activeChapter = id || null;
+      if (id) b.__lastOpened = { id, at: Date.now() };
       save();
     },
   };
 
+  /* ── 设定 ── */
   const setting = {
-    all: () => state.settings,
+    all: () => book().settings,
     add({ kind = '设定', name = '', desc = '', quotes = [] } = {}) {
       const s = {
         id: uid(), kind, name, desc,
         quotes: arr(quotes).map(String).filter(Boolean).slice(0, 6),
         at: Date.now(),
       };
-      state.settings.unshift(s);
+      book().settings.unshift(s);
       touch('setting-add', s);
       return s;
     },
-    /** 把正文里的原句追加成「佐证」，去重后最多留 6 条 */
+    update(id, patch) {
+      const s = book().settings.find((x) => x.id === id);
+      if (!s) return null;
+      Object.assign(s, patch);
+      touch('setting-update', s);
+      return s;
+    },
+    remove(id) {
+      const b = book();
+      const i = b.settings.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      b.settings.splice(i, 1);
+      touch('setting-remove', { id });
+      return true;
+    },
     addQuotes(id, lines) {
-      const s = state.settings.find((x) => x.id === id);
+      const s = book().settings.find((x) => x.id === id);
       if (!s) return null;
       const set = new Set(s.quotes || []);
       arr(lines).forEach((l) => { const t = String(l).trim(); if (t) set.add(t); });
@@ -1260,46 +1438,50 @@ const Store = (() => {
       touch('setting-update', s);
       return s;
     },
-    update(id, patch) {
-      const s = state.settings.find((x) => x.id === id);
-      if (!s) return null;
-      Object.assign(s, patch);
-      touch('setting-update', s);
-      return s;
-    },
-    remove(id) {
-      const i = state.settings.findIndex((x) => x.id === id);
-      if (i < 0) return false;
-      state.settings.splice(i, 1);
-      touch('setting-remove', { id });
+    ignoreName(name) {
+      const n = String(name || '').trim();
+      if (!n) return false;
+      const b = book();
+      if (b.ignored.includes(n)) return false;
+      b.ignored.push(n);
+      touch('setting-ignore', { name: n });
       return true;
+    },
+    isIgnored(name) { return book().ignored.includes(String(name || '').trim()); },
+    ignoredNames() { return book().ignored; },
+    unignore(name) {
+      const b = book();
+      b.ignored = b.ignored.filter((x) => x !== name);
+      touch('setting-ignore', { name });
     },
   };
 
+  /* ── 世界线 ── */
   const line = {
-    all: () => state.lines,
+    all: () => book().lines,
     add({ name = '', desc = '', at = '', status = '进行中' } = {}) {
       const l = { id: uid(), name, desc, at, status, at2: Date.now() };
-      state.lines.unshift(l);
+      book().lines.unshift(l);
       touch('line-add', l);
       return l;
     },
     update(id, patch) {
-      const l = state.lines.find((x) => x.id === id);
+      const l = book().lines.find((x) => x.id === id);
       if (!l) return null;
       Object.assign(l, patch);
       touch('line-update', l);
       return l;
     },
     remove(id) {
-      const i = state.lines.findIndex((x) => x.id === id);
+      const b = book();
+      const i = b.lines.findIndex((x) => x.id === id);
       if (i < 0) return false;
-      state.lines.splice(i, 1);
+      b.lines.splice(i, 1);
       touch('line-remove', { id });
       return true;
     },
     toggle(id) {
-      const l = state.lines.find((x) => x.id === id);
+      const l = book().lines.find((x) => x.id === id);
       if (!l) return null;
       l.status = l.status === '已收束' ? '进行中' : '已收束';
       touch('line-update', l);
@@ -1307,41 +1489,43 @@ const Store = (() => {
     },
   };
 
+  /* ── 对话 ── */
   const chat = {
-    all: () => state.chat,
+    all: () => book().chat,
     push(role, text, extra = {}) {
+      const b = book();
       const m = { id: uid(), role, text, at: Date.now(), chapterId: null, clipped: false, ...extra };
-      state.chat.push(m);
-      if (state.chat.length > 400) state.chat.splice(0, state.chat.length - 400);
+      b.chat.push(m);
+      if (b.chat.length > 400) b.chat.splice(0, b.chat.length - 400);
       touch('chat-push', m);
       return m;
     },
     markClipped(id) {
-      const m = state.chat.find((x) => x.id === id);
+      const m = book().chat.find((x) => x.id === id);
       if (!m) return null;
       m.clipped = true;
       touch('chat-update', m);
       return m;
     },
-    /** 这条消息落盘后才算真正属于某一章，回填标记 */
     attach(id, chapterId) {
-      const m = state.chat.find((x) => x.id === id);
+      const m = book().chat.find((x) => x.id === id);
       if (!m || !chapterId) return null;
       m.chapterId = chapterId;
       touch('chat-update', m);
       return m;
     },
-    clear() { state.chat = []; touch('chat-clear'); },
-    /** 只清某一章的对话（章节本身不动） */
+    clear() { book().chat = []; touch('chat-clear'); },
     clearChapter(chapterId) {
       if (!chapterId) return 0;
-      const before = state.chat.length;
-      state.chat = state.chat.filter((m) => m.chapterId !== chapterId);
+      const b = book();
+      const before = b.chat.length;
+      b.chat = b.chat.filter((m) => m.chapterId !== chapterId);
       touch('chat-clear');
-      return before - state.chat.length;
+      return before - b.chat.length;
     },
   };
 
+  /* ── 配置（全局，跨书共用） ── */
   const config = {
     all: () => state.config,
     set(patch) { Object.assign(state.config, patch); touch('config'); },
@@ -1351,24 +1535,21 @@ const Store = (() => {
   /* ── 整档导入导出 ── */
   function exportJSON() { return JSON.stringify(state, null, 2); }
 
-  /** 只读解析：给导入预览用，不改动现有数据 */
   function parseArchive(text) {
     let raw;
     try { raw = JSON.parse(text); }
     catch (e) { return { ok: false, reason: 'JSON 解析失败：' + (e.message || e) }; }
     try {
       const inc = normalize(raw);
-      return {
-        ok: true,
-        incoming: inc,
-        counts: {
-          chapters: inc.chapters.length,
-          settings: inc.settings.length,
-          lines: inc.lines.length,
-          chat: inc.chat.length,
-        },
-        title: inc.book.title,
+      const b0 = inc.books[0] || blankBook();
+      const counts = {
+        books: inc.books.length,
+        chapters: inc.books.reduce((n, b) => n + b.chapters.length, 0),
+        settings: inc.books.reduce((n, b) => n + b.settings.length, 0),
+        lines: inc.books.reduce((n, b) => n + b.lines.length, 0),
+        chat: inc.books.reduce((n, b) => n + b.chat.length, 0),
       };
+      return { ok: true, incoming: inc, counts, title: b0.title };
     } catch (e) {
       return { ok: false, reason: '数据规格化失败：' + (e.message || e) };
     }
@@ -1376,80 +1557,36 @@ const Store = (() => {
 
   /**
    * 导入存档。
-   * @param {string} text 存档 JSON
-   * @param {{parts?:string[], mode?:'merge'|'replace'}} opts
-   *   parts 默认全选；mode=merge 追加（同名条目跳过），replace 用存档里的替换掉选中的部分
+   * mode=merge 追加（新开一本书装进去，不碰现有的）；replace 用存档替换现有全部书。
    */
   function importJSON(text, opts = {}) {
     const parsed = parseArchive(text);
     if (!parsed.ok) return parsed;
     const inc = parsed.incoming;
-    const parts = Array.isArray(opts.parts) ? opts.parts : ['chapters', 'settings', 'lines', 'chat'];
     const replace = opts.mode === 'replace';
-    const report = { chapters: 0, settings: 0, lines: 0, chat: 0, skipped: 0 };
+    const report = { books: 0, chapters: 0, settings: 0, lines: 0, chat: 0 };
 
-    if (parts.includes('chapters')) {
-      if (replace) {
-        state.chapters = inc.chapters;
-        report.chapters = inc.chapters.length;
-      } else {
-        let nextNo = state.chapters.reduce((m, c) => Math.max(m, c.no), 0);
-        inc.chapters.forEach((c) => {
-          nextNo += 1;
-          state.chapters.push({ ...c, id: uid(), no: nextNo });
-          report.chapters += 1;
-        });
-      }
-      state.chapters.sort((a, b) => a.no - b.no);
+    if (replace) {
+      state.books = inc.books.map((b) => normBook(b));
+      state.activeBookId = state.books[0].id;
+    } else {
+      // 每一本都原样收进来（重发 id 避免撞车），并切到第一本
+      inc.books.forEach((b) => {
+        const nb = normBook(b);
+        nb.id = uid();
+        nb.chapters.forEach((c) => { c.id = uid(); c.drafts.forEach((d) => { d.id = uid(); }); c.activeId = c.drafts.length ? c.drafts[c.drafts.length - 1].id : null; });
+        nb.settings.forEach((s) => { s.id = uid(); });
+        nb.lines.forEach((l) => { l.id = uid(); });
+        nb.chat.forEach((m) => { m.id = uid(); });
+        state.books.push(nb);
+        report.books++;
+        report.chapters += nb.chapters.length;
+        report.settings += nb.settings.length;
+        report.lines += nb.lines.length;
+        report.chat += nb.chat.length;
+      });
+      state.activeBookId = state.books[state.books.length - inc.books.length].id;
     }
-
-    if (parts.includes('settings')) {
-      if (replace) {
-        state.settings = inc.settings;
-        report.settings = inc.settings.length;
-      } else {
-        const seen = new Set(state.settings.map((s) => s.kind + '\u0000' + s.name));
-        inc.settings.forEach((s) => {
-          const k = s.kind + '\u0000' + s.name;
-          if (seen.has(k)) { report.skipped += 1; return; }
-          seen.add(k);
-          state.settings.unshift({ ...s, id: uid() });
-          report.settings += 1;
-        });
-      }
-    }
-
-    if (parts.includes('lines')) {
-      if (replace) {
-        state.lines = inc.lines;
-        report.lines = inc.lines.length;
-      } else {
-        const seen = new Set(state.lines.map((l) => l.name));
-        inc.lines.forEach((l) => {
-          if (seen.has(l.name)) { report.skipped += 1; return; }
-          seen.add(l.name);
-          state.lines.unshift({ ...l, id: uid() });
-          report.lines += 1;
-        });
-      }
-    }
-
-    if (parts.includes('chat')) {
-      if (replace) {
-        state.chat = inc.chat;
-        report.chat = inc.chat.length;
-      } else {
-        const seen = new Set(state.chat.map((m) => m.role + '\u0000' + m.text.slice(0, 80)));
-        inc.chat.forEach((m) => {
-          const k = m.role + '\u0000' + m.text.slice(0, 80);
-          if (seen.has(k)) { report.skipped += 1; return; }
-          seen.add(k);
-          state.chat.push({ ...m, id: uid() });
-          report.chat += 1;
-        });
-      }
-    }
-
     touch('import');
     return { ok: true, report };
   }
@@ -1459,10 +1596,10 @@ const Store = (() => {
 
   return {
     load, save, on, get, uid,
-    chapter, setting, line, chat, config,
+    books, chapter, setting, line, chat, config,
     exportJSON, parseArchive, importJSON, reset, isPersistFailed,
-    get activeChapterId() { return state && state.__activeChapter || null; },
-    get lastOpened() { return (state && state.__lastOpened) || null; },
+    get activeChapterId() { return book().__activeChapter || null; },
+    get lastOpened() { return book().__lastOpened || null; },
   };
 })();
 
@@ -1615,19 +1752,21 @@ const AI = (() => {
     const c = chapterId ? Store.chapter.by(chapterId) : Store.chapter.active();
     const sections = [];
 
-    const head = [`《${st.book.title}》`];
-    if (st.book.genre) head.push(st.book.genre);
-    if (st.book.desc) head.push(cutHead(st.book.desc, 200));
+    const bk = Store.books.current();
+    const head = [`《${bk.title}》`];
+    if (bk.genre) head.push(bk.genre);
+    if (bk.desc) head.push(cutHead(bk.desc, 200));
     sections.push({ key: 'book', title: '作品', text: head.join(' · ') });
 
     if (cfg.style) sections.push({ key: 'style', title: '文风', text: cfg.style });
 
-    // 设定：先相关命中，再按时间补足
+    // 设定：**按类别分组，每类都完整带一份** ——
+    // 之前只有「人物」整表带，地点/规则/物件只能靠关键词撞运气，所以那些类别的设定等于没写。
     const probe = [ask, c ? Store.chapter.textOf(c) : ''].join('\n');
-    const all = st.settings;
+    const all = Store.setting.all();
     const people = all.filter((s) => s.kind === '人物');
 
-    // 人物表：整表带上，不受条数限制 —— 这是让 AI 自己把配角写出来的前提
+    // 人物单独成段（最重要，整表带）
     if (people.length) {
       const ranked = people.slice().sort((a, b) => {
         const ai = relevant(probe, a) ? 0 : 1;
@@ -1637,23 +1776,29 @@ const AI = (() => {
       sections.push({
         key: 'cast',
         title: `人物表（共 ${people.length} 人，必须使用这些名字）`,
-        text: ranked.slice(0, 40).map((s) => `· ${s.name}${s.desc ? '：' + cutHead(s.desc, 130) : ''}`).join('\n'),
+        text: ranked.slice(0, 40).map((s) => `· ${s.name}${s.desc ? '：' + cutHead(s.desc, 150) : ''}`).join('\n'),
       });
     }
 
-    const rest0 = all.filter((s) => s.kind !== '人物');
-    const hit = rest0.filter((s) => relevant(probe, s));
-    const rest = rest0.filter((s) => !hit.includes(s));
-    const picked = hit.concat(rest).slice(0, Math.max(0, cfg.ctxSettings | 0));
-    if (picked.length) {
+    // 其余类别各自成段，每类都给配额，不再互相挤
+    const quota = Math.max(4, Math.round((cfg.ctxSettings | 0) / 2) || 6);
+    const kinds = {};
+    all.filter((s) => s.kind !== '人物').forEach((s) => {
+      (kinds[s.kind] = kinds[s.kind] || []).push(s);
+    });
+    Object.keys(kinds).forEach((kind) => {
+      const list = kinds[kind];
+      const hit = list.filter((s) => relevant(probe, s));
+      const rest = list.filter((s) => !hit.includes(s));
+      const picked = hit.concat(rest).slice(0, quota);
       sections.push({
-        key: 'settings',
-        title: `设定（${picked.length}/${rest0.length}）`,
-        text: picked.map((s) => `· ${s.name}〔${s.kind}〕${s.desc ? '：' + cutHead(s.desc, 160) : ''}`).join('\n'),
+        key: 'set-' + kind,
+        title: `${kind}（${picked.length}/${list.length}${list.length > quota ? '，与本章相关优先' : ''}）`,
+        text: picked.map((s) => `· ${s.name}${s.desc ? '：' + cutHead(s.desc, 170) : ''}`).join('\n'),
       });
-    }
+    });
 
-    const open = st.lines.filter((l) => l.status !== '已收束');
+    const open = Store.line.all().filter((l) => l.status !== '已收束');
     if (open.length) {
       sections.push({
         key: 'lines',
@@ -1664,7 +1809,7 @@ const AI = (() => {
 
     // 上一章结尾
     if (c && (cfg.ctxPrev | 0) > 0) {
-      const prev = st.chapters.filter((x) => x.no < c.no).pop();
+      const prev = Store.chapter.all().filter((x) => x.no < c.no).pop();
       const pt = prev ? Store.chapter.textOf(prev) : '';
       if (pt.trim()) {
         sections.push({ key: 'prev', title: `上一章结尾 · ${prev.title}`, text: cut(pt, 500) });
@@ -1709,7 +1854,7 @@ const AI = (() => {
       : '';
 
     const sys = [
-      `你是长篇小说写作助手，正在协助作者创作《${st.book.title}》。`,
+      `你是长篇小说写作助手，正在协助作者创作《${Store.books.current().title}》。`,
       st.config.style ? `文风要求：${st.config.style}` : '',
       '严格遵守下面提供的设定与世界线，不要自创与设定冲突的内容。',
       '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
@@ -1752,6 +1897,34 @@ const AI = (() => {
       { role: 'system', content: sys },
       { role: 'user', content: `【本章全文】\n${String(text || '').trim()}\n\n请输出修改后的全文。` },
     ];
+  }
+
+  /* ── 让 AI 把一条设定「写厚」：只依据正文原句归纳，不许编 ── */
+  const KIND_GUIDE = {
+    人物: '外貌特征（体型、常穿什么、有无疤痕饰物）、性格脾气、说话习惯或口癖、和主角及其他人的关系',
+    地点: '位置与环境、不同时段的样子、气氛、有什么特殊之处',
+    物件: '外形与材质、来历、作用或象征意义',
+    规则: '规则内容、适用范围、限制条件、违反的代价',
+    设定: '它是什么、怎么运作、对故事有什么影响',
+  };
+
+  function buildEnrichMessages(setting) {
+    const kind = setting.kind || '设定';
+    const guide = KIND_GUIDE[kind] || '它是什么、有什么特点';
+    const quotes = (setting.quotes || []).filter(Boolean).slice(0, 8);
+
+    const sys = '你在整理小说设定集。**只根据给出的原文片段归纳**，原文没写的不要编。'
+      + '输出 3—6 行，每行以「· 」开头，每行一句，不要标题、不要小标题、不要解释、不要 markdown。';
+
+    const user = [
+      `【条目】${setting.name}（${kind}）`,
+      quotes.length ? `【正文原句】\n${quotes.map((q) => '· ' + q).join('\n')}` : '【正文原句】（还没有，请只根据名字给出最保守的推测，并在每行末尾标注「待补」）',
+      '',
+      `请归纳这个${kind}的：${guide}。`,
+      '原文只提到一部分就只写那一部分，不要凑数。',
+    ].join('\n');
+
+    return [{ role: 'system', content: sys }, { role: 'user', content: user }];
   }
 
   /* ── 只生成提示词（降级用） ── */
@@ -1865,7 +2038,29 @@ const AI = (() => {
   const STOPCHAR = new Set(('把被让给和跟向从又也都没很才就还只像似乎便即这里那着你我他她它们的是了在有不之与其并且但因为所以如果虽然'
     + '说道问答笑走来去站坐看想听见叫喊吃喝拉睡望盯摇点抓拿放推拉踢打').split(''));
   const STOP = new Set(['黄金', '白天', '马上', '高大', '温柔', '江南', '风景', '行李', '手掌', '树木', '花样', '毛病', '程度', '程序', '的确', '仿佛', '石头', '安静', '常常', '通常', '平静', '外面', '上面', '下面', '里面', '前面', '后面', '旁边', '周围', '对方', '结果', '原因', '情况', '时候', '地方', '东西', '事情', '样子', '心里', '眼神', '声音', '问题', '办法', '世界', '人生', '男人', '女人', '孩子', '老人', '学生', '老师', '医生', '警察', '老板', '经理', '司机', '服务',
-    '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数']);
+    '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数',
+    '文明', '文章', '文化', '天气', '风度', '风格', '风景', '风里', '高处', '高兴', '高手', '高处', '市场', '市里', '安全', '面子', '个子', '影子', '影子', '日子', '样子', '曲子', '嗓子',
+    '于是', '终于', '关于', '由于', '对于', '至于', '甚至', '尤其', '曾经', '已经', '立刻', '马上', '忽然', '突然', '果然', '竟然', '居然', '虽然', '固然',
+    '马路', '马上', '道路', '路口', '门口', '巷口', '街口', '出口', '入口', '窗口', '港口', '借口', '伤口', '开口',
+    '白天', '白天', '白色', '白菜', '白发', '白酒', '明白', '坦白', '空白',
+    '空气', '空白', '抽空', '天空', '星空', '太空', '高空',
+    '黄金', '黄土', '黄昏', '黄河', '黄河', '黄沙',
+    '林子', '林里', '林中', '森林', '树林',
+    '沈默', '沉着', '沉着']);
+
+  /** 名字附近出现这些字，才像是在写"人" */
+  const HUMAN_CTX = /[说道问答喊叫哭笑走来去站坐看想听望盯点摇抬低转沉默咬回身手动]/;
+
+  /** 两个名字是不是同一个人的不同叫法（老陈 / 陈） */
+  function similarName(a, b) {
+    const x = String(a || '').trim(), y = String(b || '').trim();
+    if (!x || !y) return false;
+    if (x === y) return true;
+    if (x.length >= 2 && y.length >= 2 && Math.abs(x.length - y.length) <= 1) {
+      return x.includes(y) || y.includes(x);
+    }
+    return false;
+  }
 
   /**
    * 从正文里认名字，并带回「证据句」——
@@ -1878,6 +2073,7 @@ const AI = (() => {
     const knownSet = new Set(known || []);
     const count = new Map();
     const quotes = new Map();
+    const human = new Map();     // 「像人」的证据数，用来滤掉"高大""安静"这类词
 
     const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
 
@@ -1901,6 +2097,12 @@ const AI = (() => {
         if (!seenHere.has(name)) {
           seenHere.add(name);
           count.set(name, (count.get(name) || 0) + 1);
+
+          const around = sent.slice(Math.max(0, i - 2), i + name.length + 4);
+          const after = sent.slice(i + name.length, i + name.length + 1);
+          if (HUMAN_CTX.test(around)) human.set(name, (human.get(name) || 0) + 1);
+          if (/^[「『"]/.test(after)) human.set(name, (human.get(name) || 0) + 1);
+
           const arr = quotes.get(name) || [];
           if (arr.length < 3 && !arr.includes(sent)) arr.push(sent);
           quotes.set(name, arr);
@@ -1910,16 +2112,23 @@ const AI = (() => {
     }
 
     return [...count.entries()]
-      .filter(([, n]) => n >= 2)
+      .filter(([name, n]) => n >= 2 && (human.get(name) || 0) >= 1)   // 出现过两次以上，且至少有"像人"的上下文
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([name, n]) => ({ name, n, quotes: quotes.get(name) || [] }));
   }
 
-  /** 扫一批文本，找出还没进设定的名字 */
+  /** 扫一批文本，找出「还值得问一句」的名字：
+      已经在设定里的（含"老陈/陈"这种叫法差异）不问，用户拒绝过的不问。 */
   function findNewNames(text) {
     const known = Store.setting.all().map((s) => s.name);
-    return extractNames(text, known);
+    const ignored = Store.setting.ignoredNames();
+    return extractNames(text, [])
+      .filter((x) => {
+        if (ignored.includes(x.name)) return false;
+        if (known.some((k) => similarName(k, x.name))) return false;
+        return true;
+      });
   }
 
   /** 反过来：从文本里给「已经入库的名字」收集原句，用来补佐证 */
@@ -1938,7 +2147,7 @@ const AI = (() => {
   }
 
   return {
-    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages,
+    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages, buildEnrichMessages,
     generate, probe, cut, extractNames, findNewNames, quotesFor,
   };
 })();
@@ -2887,22 +3096,40 @@ const ChatView = (() => {
         ? `<div class="namequote">${n.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>`
         : ''}
         </div>`).join('')}
-      <button class="btn" id="nmSave" style="margin-top:16px">存进设定</button>
-      <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用</button>
+      <label class="pickrow" style="border-bottom:none;margin-top:10px">
+        <input type="checkbox" id="nmEnrich" checked>
+        <span class="pickrow__k" style="font-size:13px">入库后让 AI 把说明也补全</span>
+      </label>
+      <button class="btn" id="nmSave" style="margin-top:14px">存进设定</button>
+      <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用（以后别再问这些名字）</button>
     `, (r) => {
-      r.querySelector('#nmSkip').onclick = () => App.closeSheet();
+      r.querySelector('#nmSkip').onclick = () => {
+        names.forEach((x) => Store.setting.ignoreName(x.name));
+        App.closeSheet();
+        if (WorldView) WorldView.render();
+        App.toast('已加入忽略名单，以后不再问', 2400);
+      };
       r.querySelector('#nmSave').onclick = () => {
-        let n = 0;
+        const wantEnrich = r.querySelector('#nmEnrich') && r.querySelector('#nmEnrich').checked;
+        const ids = [];
         names.forEach((x, i) => {
           const cb = r.querySelector(`[data-nm="${i}"]`);
           if (!cb || !cb.checked) return;
           const kind = r.querySelector(`[data-nk="${i}"]`).value;
-          Store.setting.add({ kind, name: x.name, desc: '', quotes: x.quotes || [] });
-          n++;
+          const s = Store.setting.add({ kind, name: x.name, desc: '', quotes: x.quotes || [] });
+          ids.push(s.id);
         });
         App.closeSheet();
         if (WorldView) WorldView.render();
-        App.toast(n ? `已存进设定 ${n} 条（含正文佐证），可去补说明` : '没有新增', 2600);
+        if (!ids.length) return App.toast('没有新增');
+        App.toast(`已存进设定 ${ids.length} 条${wantEnrich ? '，正在补全说明…' : ''}`, 2600);
+        if (wantEnrich && typeof WorldView !== 'undefined' && WorldView) {
+          (async () => {
+            for (const id of ids) await WorldView.enrich(id, { silent: true });
+            WorldView.render();
+            App.toast(`说明已补全 ${ids.length} 条`, 2400);
+          })();
+        }
       };
     });
   }
@@ -3289,6 +3516,57 @@ const WorldView = (() => {
     </div>`;
   }
 
+  /* ── 让 AI 把一条设定写厚（只依据正文原句，不许编） ── */
+  async function enrich(id, opts = {}) {
+    const s = Store.setting.all().find((x) => x.id === id);
+    if (!s) return null;
+    if (!Store.config.ready()) { App.toast('先配置模型（右上 ⚙）'); return null; }
+    try {
+      let acc = '';
+      const txt = await AI.generate({
+        messages: AI.buildEnrichMessages(s),
+        onDelta: (p) => { acc += p; },
+      });
+      const out = (txt || acc).trim();
+      if (!out) throw new Error('没有返回内容');
+      const merged = s.desc && s.desc.trim() ? (s.desc.trim() + '\n' + out) : out;
+      Store.setting.update(id, { desc: merged });
+      if (!opts.silent) { render(); App.toast('已补全「' + s.name + '」', 2200); }
+      return out;
+    } catch (e) {
+      if (!opts.silent) App.toast('补全失败：' + (e && e.message || e), 3400);
+      return null;
+    }
+  }
+
+  /** 把「有正文佐证、但说明还空着」的条目批量补一遍 */
+  async function enrichAllEmpty() {
+    const targets = Store.setting.all().filter((s) => !s.desc.trim() && (s.quotes || []).length);
+    if (!targets.length) return App.toast('没有需要补的条目');
+    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
+    App.sheet('补全说明', `
+      <div class="field__hint" style="margin-bottom:12px">共 ${targets.length} 条待补。每条调用一次模型，可以随时停。</div>
+      <div class="tidyview" id="enOut" style="min-height:120px"></div>
+      <button class="btn btn--ghost" id="enStop" style="margin-top:12px">停止</button>
+    `, (r) => {
+      let stop = false;
+      const out = r.querySelector('#enOut');
+      r.querySelector('#enStop').onclick = () => { stop = true; App.closeSheet(); };
+      (async () => {
+        let done = 0;
+        for (const s of targets) {
+          if (stop) break;
+          out.textContent = `正在补：${s.name}（${done + 1}/${targets.length}）\n\n` + out.textContent.trim();
+          await enrich(s.id, { silent: true });
+          done++;
+        }
+        App.closeSheet();
+        render();
+        App.toast(`已补全 ${done} 条`, 2400);
+      })();
+    });
+  }
+
   /* ── 编辑面板 ── */
   function editLine(id) {
     const l = id ? Store.line.all().find((x) => x.id === id) : null;
@@ -3346,8 +3624,8 @@ const WorldView = (() => {
         <div class="field">
           <label class="field__label">正文佐证（写的时候自动收的）</label>
           <div class="quotebox" id="stQuotes">${s.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>
-          <button class="btn btn--ghost" id="stToDesc" style="margin-top:8px">拿这些句子起草说明</button>
         </div>` : ''}
+      ${s ? `<button class="btn btn--ghost" id="stEnrich" style="margin-bottom:8px">✦ 让 AI 补全说明</button>` : ''}
       <button class="btn" id="stSave">${s ? '保存' : '添加'}</button>
       ${s ? '<button class="btn btn--danger" id="stDel" style="margin-top:8px">删除</button>' : ''}
     `, (r) => {
@@ -3360,13 +3638,19 @@ const WorldView = (() => {
         if (s) Store.setting.update(s.id, patch); else Store.setting.add(patch);
         App.closeSheet(); render(); App.toast(s ? '已保存' : '已添加');
       };
-      const toDesc = r.querySelector('#stToDesc');
-      if (toDesc) toDesc.onclick = () => {
+      const en = r.querySelector('#stEnrich');
+      if (en) en.onclick = async () => {
         const ta = r.querySelector('#stDesc');
-        const cur = ta.value.trim();
-        const draft = (s.quotes || []).map((q) => q.replace(/[。！？]$/, '')).join('；');
-        ta.value = cur ? cur + '\n' + draft : draft;
-        ta.focus();
+        Store.setting.update(s.id, { desc: ta.value.trim() });   // 先把手上改的存下
+        en.disabled = true; en.textContent = '补全中…';
+        const before = ta.value.trim();
+        const out = await enrich(s.id, { silent: true });
+        if (out) {
+          ta.value = before ? before + '\n' + out : out;
+          ta.scrollTop = ta.scrollHeight;
+          App.toast('已补全，可继续编辑');
+        }
+        en.disabled = false; en.textContent = '✦ 让 AI 补全说明';
       };
       if (s) r.querySelector('#stDel').onclick = () => {
         if (!confirm('删除这条设定？')) return;
@@ -3467,7 +3751,7 @@ const WorldView = (() => {
     render();
   }
 
-  return { init, render, setPick };
+  return { init, render, setPick, enrich, enrichAllEmpty };
 })();
 
 /* ─── js/app.js ─── */
@@ -3640,36 +3924,110 @@ const App = (() => {
     });
   }
 
-  /* ── 设置：作品 ── */
+  /* ── 作品：多本管理 ── */
   function openBookSettings() {
-    const b = Store.get().book;
-    const st = Store.get();
+    const bk = Store.books.current();
+    const list = Store.books.all();
+
     sheet('作品', `
+      <div class="sec-title">当前这本</div>
       <div class="field">
         <label class="field__label">书名</label>
-        <input class="input" id="bkTitle" value="${esc(b.title)}">
+        <input class="input" id="bkTitle" value="${esc(bk.title)}">
       </div>
       <div class="field">
         <label class="field__label">题材</label>
-        <input class="input" id="bkGenre" value="${esc(b.genre)}" placeholder="都市异能 / 玄幻 / 悬疑">
+        <input class="input" id="bkGenre" value="${esc(bk.genre)}" placeholder="都市异能 / 玄幻 / 悬疑">
       </div>
       <div class="field">
         <label class="field__label">一句话设定</label>
-        <textarea class="textarea" id="bkDesc" style="min-height:70px">${esc(b.desc)}</textarea>
+        <textarea class="textarea" id="bkDesc" style="min-height:70px">${esc(bk.desc)}</textarea>
       </div>
       <button class="btn" id="bkSave">保存</button>
-      <div class="sec-title">概览</div>
-      <div class="kv"><span class="kv__k">章节</span><span class="kv__v">${st.chapters.length}</span></div>
-      <div class="kv"><span class="kv__k">总字数</span><span class="kv__v">${st.chapters.reduce((n, c) => n + Store.chapter.textOf(c).length, 0)}</span></div>
-      <div class="kv"><span class="kv__k">设定</span><span class="kv__v">${st.settings.length}</span></div>
-      <div class="kv"><span class="kv__k">世界线</span><span class="kv__v">${st.lines.length}（未收束 ${st.lines.filter((l) => l.status !== '已收束').length}）</span></div>
+
+      <div class="sec-title">这本的产出</div>
+      <div class="kv"><span class="kv__k">章节</span><span class="kv__v">${bk.chapters.length}</span></div>
+      <div class="kv"><span class="kv__k">总字数</span><span class="kv__v">${bk.chapters.reduce((n, c) => n + Store.chapter.textOf(c).length, 0)}</span></div>
+      <div class="kv"><span class="kv__k">设定</span><span class="kv__v">${bk.settings.length}</span></div>
+      <div class="kv"><span class="kv__k">世界线</span><span class="kv__v">${bk.lines.length}（未收束 ${bk.lines.filter((l) => l.status !== '已收束').length}）</span></div>
+
+      <div class="sec-title">我的作品（${list.length} 本）</div>
+      ${list.map((b) => `
+        <div class="kv">
+          <span class="kv__k">${b.id === bk.id ? '● ' : ''}${esc(b.title)}</span>
+          <span class="kv__v">${b.chapters.length} 章 · ${b.settings.length} 设定</span>
+          ${b.id === bk.id ? '' : `<button class="mini-btn" data-sw="${b.id}">切过去</button>`}
+          ${list.length > 1 && b.id !== bk.id ? `<button class="mini-btn mini-btn--danger" data-del="${b.id}">删</button>` : ''}
+        </div>`).join('')}
+      <button class="btn btn--ghost" id="bkNew" style="margin-top:16px">+ 新开一本</button>
+      <div class="field__hint" style="margin-top:10px">
+        每本书的章节、设定、世界线、对话都是独立的，互不串。模型设置是全局的。
+      </div>
     `, (r) => {
       r.querySelector('#bkSave').onclick = () => {
-        Store.get().book.title = r.querySelector('#bkTitle').value.trim() || '未命名作品';
-        Store.get().book.genre = r.querySelector('#bkGenre').value.trim();
-        Store.get().book.desc = r.querySelector('#bkDesc').value.trim();
-        Store.save(); renderTop(); toast('已保存');
-        closeSheet();
+        Store.books.update(bk.id, {
+          title: r.querySelector('#bkTitle').value.trim() || '未命名作品',
+          genre: r.querySelector('#bkGenre').value.trim(),
+          desc: r.querySelector('#bkDesc').value.trim(),
+        });
+        renderTop(); toast('已保存'); closeSheet();
+      };
+      r.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {
+        Store.books.switchTo(b.dataset.sw);
+        closeSheet(); renderAll(); toast('已切到《' + Store.books.current().title + '》');
+      });
+      r.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+        const t = Store.books.all().find((x) => x.id === b.dataset.del);
+        if (!confirm(`删除《${t.title}》整本？章节、设定、对话都会一起没。此操作不可撤销。`)) return;
+        Store.books.remove(b.dataset.del);
+        closeSheet(); renderAll(); toast('已删除');
+      });
+      r.querySelector('#bkNew').onclick = () => openNewBook();
+    });
+  }
+
+  /* 新开一本：问清楚要不要把当前的设定带过去 */
+  function openNewBook() {
+    const src = Store.books.current();
+    const kinds = {};
+    src.settings.forEach((s) => { kinds[s.kind] = (kinds[s.kind] || 0) + 1; });
+    const kindList = Object.keys(kinds);
+
+    sheet('新开一本', `
+      <div class="field">
+        <label class="field__label">书名</label>
+        <input class="input" id="nbTitle" placeholder="第 ${Store.books.all().length + 1} 本">
+      </div>
+      <div class="field">
+        <label class="field__label">题材（可留空）</label>
+        <input class="input" id="nbGenre" placeholder="都市异能 / 玄幻 / 悬疑">
+      </div>
+      <div class="field">
+        <label class="field__label">一句话设定（可留空）</label>
+        <textarea class="textarea" id="nbDesc" style="min-height:60px"></textarea>
+      </div>
+      <div class="sec-title">要不要沿用《${esc(src.title)}》的设定</div>
+      <div class="field__hint" style="margin-bottom:8px">
+        不勾就是**全新开始**，跟这本书完全隔离（推荐，除非你写的是同世界观系列）。
+      </div>
+      ${kindList.length ? kindList.map((k) => `
+        <label class="pickrow">
+          <input type="checkbox" data-kind="${esc(k)}">
+          <span class="pickrow__k">${esc(k)}</span>
+          <span class="pickrow__n">${kinds[k]} 条</span>
+        </label>`).join('') : '<div class="field__hint">当前这本还没有设定可带。</div>'}
+      <button class="btn" id="nbGo" style="margin-top:18px">建这本</button>
+    `, (r) => {
+      r.querySelector('#nbGo').onclick = () => {
+        const title = r.querySelector('#nbTitle').value.trim();
+        const genre = r.querySelector('#nbGenre').value.trim();
+        const desc = r.querySelector('#nbDesc').value.trim();
+        const picked = [...r.querySelectorAll('[data-kind]:checked')].map((x) => x.dataset.kind);
+        const b = Store.books.create({ title, genre, desc });
+        let copied = 0;
+        if (picked.length) copied = Store.books.copySettingsFrom(src.id, picked);
+        closeSheet(); renderAll();
+        toast(copied ? `已新建《${b.title}》，带过来 ${copied} 条设定` : `已新建《${b.title}》`, 2600);
       };
     });
   }
@@ -3704,7 +4062,7 @@ const App = (() => {
       <div class="buildstamp" id="buildStamp"></div>
     `, (r) => {
       r.querySelector('#dExp').onclick = () => {
-        const name = (Store.get().book.title || '临文录').replace(/[\\/:*?"<>|]/g, '_');
+        const name = (Store.books.current().title || '临文录').replace(/[\\/:*?"<>|]/g, '_');
         download(name + '.json', Store.exportJSON(), 'application/json');
         toast('已导出');
       };
@@ -3755,50 +4113,45 @@ const App = (() => {
     });
   }
 
-  /* ── 导入预览：先看清楚，再决定要哪些、怎么合 ── */
+  /* ── 导入预览：先看清楚，再决定怎么放 ── */
   function openImportPreview(text, filename) {
     const p = Store.parseArchive(text);
     if (!p.ok) return toast('导入失败：' + p.reason, 3400);
     const n = p.counts;
-    const row = (key, label, num) => `
-      <label class="pickrow ${num ? '' : 'is-off'}">
-        <input type="checkbox" data-part="${key}" ${num ? 'checked' : 'disabled'}>
-        <span class="pickrow__k">${label}</span>
-        <span class="pickrow__n">${num}</span>
-      </label>`;
+    const row = (label, num) => `
+      <div class="kv"><span class="kv__k">${label}</span><span class="kv__v">${num}</span></div>`;
     sheet('导入预览', `
       <div class="field__hint" style="margin-bottom:12px">
         文件：${esc(filename || '（未命名）')}<br>
         作品：<b>${esc(p.title)}</b>
       </div>
-      <div class="sec-title">要导入哪些</div>
-      ${row('chapters', '章节', n.chapters)}
-      ${row('settings', '设定', n.settings)}
-      ${row('lines', '世界线', n.lines)}
-      ${row('chat', '对话记录', n.chat)}
-      <div class="sec-title">怎么合</div>
+      <div class="sec-title">里面有什么</div>
+      ${row('作品', n.books)}
+      ${row('章节', n.chapters)}
+      ${row('设定', n.settings)}
+      ${row('世界线', n.lines)}
+      ${row('对话记录', n.chat)}
+      <div class="sec-title">怎么放</div>
       <label class="pickrow">
         <input type="radio" name="imode" value="merge" checked>
-        <span class="pickrow__k">合并</span>
-        <span class="pickrow__n" style="font-size:11px">同名条目跳过，其他追加</span>
+        <span class="pickrow__k">装成新书</span>
+        <span class="pickrow__n" style="font-size:11px">不碰现有的</span>
       </label>
       <label class="pickrow">
         <input type="radio" name="imode" value="replace">
-        <span class="pickrow__k">替换</span>
-        <span class="pickrow__n" style="font-size:11px">用文件里的覆盖所选部分</span>
+        <span class="pickrow__k">替换全部</span>
+        <span class="pickrow__n" style="font-size:11px">现有作品会被清掉</span>
       </label>
       <button class="btn" id="ipGo" style="margin-top:18px">开始导入</button>
     `, (r) => {
       r.querySelector('#ipGo').onclick = () => {
-        const parts = [...r.querySelectorAll('[data-part]:checked')].map((x) => x.dataset.part);
-        if (!parts.length) return toast('至少选一项');
         const mode = (r.querySelector('input[name="imode"]:checked') || {}).value || 'merge';
-        const res = Store.importJSON(text, { parts, mode });
+        if (mode === 'replace' && !confirm('这会把现有全部作品替换掉，确定？')) return;
+        const res = Store.importJSON(text, { mode });
         if (!res.ok) return toast('导入失败：' + res.reason, 3400);
         const g = res.report;
         closeSheet(); renderAll();
-        toast(`已导入 章节${g.chapters} · 设定${g.settings} · 世界线${g.lines} · 对话${g.chat}` +
-          (g.skipped ? `（跳过重复 ${g.skipped}）` : ''), 3200);
+        toast(`已导入 ${g.books} 本 · 章节${g.chapters} · 设定${g.settings} · 世界线${g.lines}`, 3200);
       };
     });
   }
@@ -3854,13 +4207,14 @@ const App = (() => {
 
   /* ── 顶栏渲染 ── */
   function renderTop() {
-    const st = Store.get();
-    el.bookName.textContent = st.book.title || '临文录';
-    const total = st.chapters.reduce((n, c) => n + Store.chapter.textOf(c).length, 0);
+    const bk = Store.books.current();
+    el.bookName.textContent = bk.title || '临文录';
+    const chs = Store.chapter.all();
+    const total = chs.reduce((n, c) => n + Store.chapter.textOf(c).length, 0);
     const parts = [];
-    if (st.book.genre) parts.push(st.book.genre);
-    parts.push(`${st.chapters.length} 章`);
-    if (total > 0) parts.push((total >= 10000 ? (total / 10000).toFixed(1) + ' 万字' : total + ' 字'));
+    if (bk.genre) parts.push(bk.genre);
+    parts.push(`${chs.length} 章`);
+    if (total > 0) parts.push(total >= 10000 ? (total / 10000).toFixed(1) + ' 万字' : total + ' 字');
     el.bookMeta.textContent = parts.join(' · ');
   }
 
@@ -3875,7 +4229,7 @@ const App = (() => {
       </button>
       <button class="navrow" id="mBook">
         <span class="navrow__k">作品信息</span>
-        <span class="navrow__v">${esc(Store.get().book.title)}</span>
+        <span class="navrow__v">${esc(Store.books.current().title)}</span>
         <span class="navrow__a">›</span>
       </button>
       <button class="navrow" id="mData">
@@ -3938,7 +4292,7 @@ const App = (() => {
         r.querySelector('#vaCtx').onclick = () => { closeSheet(); ChatView.openContext(); };
         r.querySelector('#vaPull').onclick = () => {
           const md = Store.chat.all().map((m) => `### ${m.role === 'me' ? '我' : (m.role === 'ai' ? '临文' : '·')}\n${m.text}`).join('\n\n');
-          download((Store.get().book.title || '临文录') + '-对话.md', md, 'text/markdown');
+          download((Store.books.current().title || '临文录') + '-对话.md', md, 'text/markdown');
           toast('已导出对话');
         };
         r.querySelector('#vaClear').onclick = () => {
@@ -3949,27 +4303,62 @@ const App = (() => {
       return;
     }
     // world
+    const emptyCount = Store.setting.all().filter((s) => !s.desc.trim() && (s.quotes || []).length).length;
     sheet('世界线与设定', `
+      <button class="navrow" id="vaEnrichAll">
+        <span class="navrow__k">补全空说明</span>
+        <span class="navrow__v">${emptyCount ? emptyCount + ' 条待补' : '没有待补的'}</span>
+        <span class="navrow__a">›</span>
+      </button>
       <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaIgnored"><span class="navrow__k">忽略名单</span><span class="navrow__v">${Store.setting.ignoredNames().length} 个名字不再询问</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
-      <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入（可选要哪些）</span><span class="navrow__v">合并 / 替换</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
     `, (r) => {
+      r.querySelector('#vaEnrichAll').onclick = () => { closeSheet(); WorldView.enrichAllEmpty(); };
+      r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
       r.querySelector('#vaWorldExp').onclick = () => {
-        const st = Store.get();
-        download((st.book.title || '临文录') + '-设定.json',
-          JSON.stringify({ settings: st.settings, lines: st.lines }, null, 2), 'application/json');
+        const bk = Store.books.current();
+        download((bk.title || '临文录') + '-设定.json',
+          JSON.stringify({ settings: bk.settings, lines: bk.lines }, null, 2), 'application/json');
         toast('已导出');
       };
       r.querySelector('#vaWorldImp').onclick = () => { closeSheet(); openDataSettings('import'); };
     });
   }
 
+  /* ── 忽略名单：被拒绝过的名字，可以放出来重新问 ── */
+  function openIgnored() {
+    const list = Store.setting.ignoredNames();
+    sheet('忽略名单', `
+      <div class="field__hint" style="margin-bottom:12px">
+        这些名字你选过「不用」，系统不会再拿它们问你。放出来之后会重新参与识别。
+      </div>
+      ${list.length ? list.map((n) => `
+        <div class="kv">
+          <span class="kv__k">${esc(n)}</span>
+          <button class="mini-btn" data-un="${esc(n)}">放出来</button>
+        </div>`).join('') : '<div class="field__hint">名单是空的。</div>'}
+      ${list.length > 1 ? '<button class="btn btn--ghost" id="igClear" style="margin-top:16px">全部放出来</button>' : ''}
+    `, (r) => {
+      r.querySelectorAll('[data-un]').forEach((b) => b.onclick = () => {
+        Store.setting.unignore(b.dataset.un);
+        closeSheet(); openIgnored();
+      });
+      const c = r.querySelector('#igClear');
+      if (c) c.onclick = () => {
+        [...list].forEach((n) => Store.setting.unignore(n));
+        closeSheet(); openIgnored();
+      };
+    });
+  }
+
   function exportText() {
-    const st = Store.get();
-    const md = [`# ${st.book.title}`, st.book.genre ? `> ${st.book.genre}` : '', '']
-      .concat(st.chapters.map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
-    download((st.book.title || '临文录') + '.md', md, 'text/markdown');
+    const bk = Store.books.current();
+    const md = [`# ${bk.title}`, bk.genre ? `> ${bk.genre}` : '', '']
+      .concat(Store.chapter.all().map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
+    download((bk.title || '临文录') + '.md', md, 'text/markdown');
     toast('已导出正文');
   }
 
@@ -4047,12 +4436,21 @@ const App = (() => {
       if (e.key === 'Escape') { if (!el.sheet.hidden) closeSheet(); else ReadView.clearSelection(); }
     });
 
-    // 第一次使用：没有书也没有章节时给一点起手素材
-    const st = Store.get();
-    if (!st.chapters.length && !st.settings.length) {
-      st.book.title = '未命名作品';
-      Store.save();
+    // 手机键盘弹出会把底部输入框盖住，这里把它顶上来
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => {
+        const ae = document.activeElement;
+        if (!ae || (ae.tagName !== 'TEXTAREA' && ae.tagName !== 'INPUT')) return;
+        setTimeout(() => {
+          const vh = window.visualViewport.height;
+          const r = ae.getBoundingClientRect();
+          if (r.bottom > vh - 24) ae.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 140);
+      });
     }
+
+    // 第一次使用：确保至少有一本空书，界面才不会空转
+    Store.books.current();
 
     Store.on((type) => {
       if (type === 'persist-failed') {

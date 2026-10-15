@@ -1,12 +1,15 @@
 /* ════════════════════════════════════════════
    临文录 · 数据层
-   单一真源 = 内存里的 state；持久化 = localStorage + 导出 JSON
-   原则：坏数据只降级不崩；任何写入都发变更事件
+   现在支持多本书：每本书各自独立的章节 / 设定 / 世界线 / 对话。
+   配置（模型、主题等）是全局的，跨书共用。
+
+   对外 API 与单书时期保持一致（chapter / setting / line / chat 操作的都是"当前这本书"），
+   所以上层视图代码不需要改动。
    ════════════════════════════════════════════ */
 
 const Store = (() => {
   const KEY = 'linwenlu.db.v1';
-  const SCHEMA = 1;
+  const SCHEMA = 2;
 
   const listeners = new Set();
   let state = null;
@@ -18,104 +21,169 @@ const Store = (() => {
   const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
   const arr = (v) => (Array.isArray(v) ? v : []);
 
-  function blank() {
+  function blankConfig() {
     return {
-      schema: SCHEMA,
-      book: { title: '未命名作品', genre: '', desc: '' },
+      apiBase: 'https://api.deepseek.com/v1',
+      apiKey: '',
+      model: 'deepseek-chat',
+      temperature: 0.9,
+      style: '冷峻、白描、少形容词；对话不解释情绪；每段一到三句。',
+      ctxSettings: 12,
+      ctxPrev: 1,
+      ctxTail: 1200,
+      commitMode: 'ask',      // ask（每次问）| auto（自动续接）
+      lastCommit: 'append',
+      targetWords: 800,
+      theme: 'light',
+    };
+  }
+
+  function blankBook(title) {
+    return {
+      id: uid(),
+      title: title || '未命名作品',
+      genre: '',
+      desc: '',
       chapters: [],
       settings: [],
       lines: [],
       chat: [],
-      config: {
-        apiBase: 'https://api.deepseek.com/v1',
-        apiKey: '',
-        model: 'deepseek-chat',
-        temperature: 0.9,
-        style: '冷峻、白描、少形容词；对话不解释情绪；每段一到三句。',
-        ctxSettings: 12,
-        ctxPrev: 1,
-        ctxTail: 1200,
-        commitMode: 'ask',      // ask（每次问）| auto（自动续接）
-        lastCommit: 'append',   // 上次选的写入方式，下次排在第一位
-        targetWords: 800,       // 每次生成的目标字数（0 = 不要求）
-        theme: 'light',         // light（纸感）| dark（夜色）
-      },
+      ignored: [],          // 用户拒绝过的名字（每本书独立）
+      createdAt: Date.now(),
+      at: Date.now(),
     };
   }
 
-  /* ── 规格化：任何来源的数据都要能安全落地 ── */
-  function normalize(raw) {
-    const base = blank();
-    if (!raw || typeof raw !== 'object') return base;
+  function blank() {
+    const b = blankBook();
+    return { schema: SCHEMA, books: [b], activeBookId: b.id, config: blankConfig() };
+  }
 
-    const out = base;
-    if (raw.book && typeof raw.book === 'object') {
-      out.book.title = str(raw.book.title, base.book.title) || base.book.title;
-      out.book.genre = str(raw.book.genre);
-      out.book.desc = str(raw.book.desc);
-    }
-    Object.assign(out.config, raw.config && typeof raw.config === 'object' ? raw.config : {});
+  /* ── 规格化 ── */
+  function normChapter(c, i) {
+    const drafts = arr(c && c.drafts)
+      .map((d) => ({
+        id: str(d && d.id) || uid(),
+        ver: num(d && d.ver, 1),
+        text: str(d && d.text),
+        source: str(d && d.source, '手写'),
+        at: num(d && d.at, Date.now()),
+      }))
+      .filter((d) => d.text.trim() !== '');
+    drafts.sort((a, b) => a.ver - b.ver);
+    const activeId = drafts.some((d) => d.id === (c && c.activeId))
+      ? c.activeId
+      : (drafts.length ? drafts[drafts.length - 1].id : null);
+    return {
+      id: str(c && c.id) || uid(),
+      no: num(c && c.no, i + 1),
+      title: str(c && c.title) || `第${num(c && c.no, i + 1)}章`,
+      drafts, activeId,
+      at: num(c && c.at, Date.now()),
+    };
+  }
 
-    out.chapters = arr(raw.chapters).map((c, i) => {
-      const drafts = arr(c && c.drafts)
-        .map((d) => ({
-          id: str(d && d.id) || uid(),
-          ver: num(d && d.ver, 1),
-          text: str(d && d.text),
-          source: str(d && d.source, '手写'),
-          at: num(d && d.at, Date.now()),
-        }))
-        .filter((d) => d.text.trim() !== '');
-      drafts.sort((a, b) => a.ver - b.ver);
-      const activeId = drafts.some((d) => d.id === (c && c.activeId))
-        ? c.activeId
-        : (drafts.length ? drafts[drafts.length - 1].id : null);
-      return {
-        id: str(c && c.id) || uid(),
-        no: num(c && c.no, i + 1),
-        title: str(c && c.title) || `第${num(c && c.no, i + 1)}章`,
-        drafts,
-        activeId,
-        at: num(c && c.at, Date.now()),
-      };
-    });
-    out.chapters.sort((a, b) => a.no - b.no);
-
-    out.settings = arr(raw.settings).map((s) => ({
+  function normSetting(s) {
+    return {
       id: str(s && s.id) || uid(),
       kind: str(s && s.kind, '设定'),
       name: str(s && s.name, '未命名'),
       desc: str(s && s.desc),
       quotes: arr(s && s.quotes).map(String).filter(Boolean).slice(0, 6),
       at: num(s && s.at, Date.now()),
-    }));
+    };
+  }
 
-    out.lines = arr(raw.lines).map((l) => ({
+  function normLine(l) {
+    return {
       id: str(l && l.id) || uid(),
       name: str(l && l.name, '未命名'),
       desc: str(l && l.desc),
       at: str(l && l.at, ''),
       status: str(l && l.status, '进行中'),
       at2: num(l && l.at2, Date.now()),
-    }));
+    };
+  }
 
-    out.chat = arr(raw.chat)
-      .map((m) => ({
-        id: str(m && m.id) || uid(),
-        role: m && m.role === 'me' ? 'me' : (m && m.role === 'note' ? 'note' : 'ai'),
-        text: str(m && m.text),
-        at: num(m && m.at, Date.now()),
-        chapterId: m && m.chapterId ? str(m.chapterId) : null,
-        clipped: !!(m && m.clipped),
-      }))
-      .filter((m) => m.text !== '');
+  function normMsg(m) {
+    return {
+      id: str(m && m.id) || uid(),
+      role: m && m.role === 'me' ? 'me' : (m && m.role === 'note' ? 'note' : 'ai'),
+      text: str(m && m.text),
+      at: num(m && m.at, Date.now()),
+      chapterId: m && m.chapterId ? str(m.chapterId) : null,
+      clipped: !!(m && m.clipped),
+    };
+  }
 
-    // 「上次写到哪」也要跟着存档走，否则导入后这个位置就丢了
-    if (raw.__lastOpened && typeof raw.__lastOpened === 'object' && raw.__lastOpened.id) {
-      out.__lastOpened = { id: str(raw.__lastOpened.id), at: num(raw.__lastOpened.at, Date.now()) };
+  function normBook(b) {
+    const out = blankBook(str(b && b.title, '未命名作品') || '未命名作品');
+    out.id = str(b && b.id) || out.id;
+    out.genre = str(b && b.genre);
+    out.desc = str(b && b.desc);
+    out.createdAt = num(b && (b.createdAt || b.at), Date.now());
+    out.at = num(b && b.at, Date.now());
+    out.chapters = arr(b && b.chapters).map(normChapter);
+    out.chapters.sort((a, b2) => a.no - b2.no);
+    out.settings = arr(b && b.settings).map(normSetting);
+    out.lines = arr(b && b.lines).map(normLine);
+    out.chat = arr(b && b.chat).map(normMsg).filter((m) => m.text !== '');
+    out.ignored = arr(b && b.ignored).map(String).filter(Boolean).slice(0, 500);
+    return out;
+  }
+
+  function normalize(raw) {
+    const base = blank();
+    if (!raw || typeof raw !== 'object') return base;
+
+    const out = base;
+    Object.assign(out.config, raw.config && typeof raw.config === 'object' ? raw.config : {});
+
+    if (raw.schema >= 2 && arr(raw.books).length) {
+      // 新结构
+      out.books = arr(raw.books).map(normBook);
+      const want = str(raw.activeBookId);
+      out.activeBookId = out.books.some((b) => b.id === want) ? want : out.books[0].id;
+    } else if (arr(raw.chapters).length || arr(raw.settings).length || arr(raw.lines).length || arr(raw.chat).length) {
+      // 老的单书存档 → 包成第一本书
+      const b = normBook({
+        title: (raw.book && raw.book.title) || '未命名作品',
+        genre: raw.book && raw.book.genre,
+        desc: raw.book && raw.book.desc,
+        chapters: raw.chapters, settings: raw.settings, lines: raw.lines,
+        chat: raw.chat, ignored: raw.ignored,
+      });
+      out.books = [b];
+      out.activeBookId = b.id;
+      if (raw.__lastOpened && raw.__lastOpened.id) {
+        b.__lastOpened = { id: str(raw.__lastOpened.id), at: num(raw.__lastOpened.at, Date.now()) };
+      }
+    } else {
+      // 完全空的存档
+      if (raw.book && typeof raw.book === 'object') {
+        out.books[0].title = str(raw.book.title, '未命名作品') || '未命名作品';
+        out.books[0].genre = str(raw.book.genre);
+        out.books[0].desc = str(raw.book.desc);
+      }
+    }
+
+    if (raw.__lastOpened && raw.__lastOpened.id && out.books[0] && !out.books[0].__lastOpened) {
+      out.books[0].__lastOpened = { id: str(raw.__lastOpened.id), at: num(raw.__lastOpened.at, Date.now()) };
     }
 
     return out;
+  }
+
+  /* ── 当前书 ── */
+  function book() {
+    if (!state.books.length) {
+      const b = blankBook();
+      state.books.push(b);
+      state.activeBookId = b.id;
+    }
+    let b = state.books.find((x) => x.id === state.activeBookId);
+    if (!b) { b = state.books[0]; state.activeBookId = b.id; }
+    return b;
   }
 
   /* ── 持久化 ── */
@@ -152,18 +220,75 @@ const Store = (() => {
       try { fn(type, detail); } catch (e) { console.error(e); }
     });
   }
-
-  function touch(type, detail) { save(); emit(type, detail); }
+  function touch(type, detail) { book().at = Date.now(); save(); emit(type, detail); }
   function on(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
   /* ── 查询 ── */
   const get = () => state;
 
+  /* ── 书 ── */
+  const books = {
+    all: () => state.books,
+    current: book,
+    currentId: () => book().id,
+    create({ title, genre = '', desc = '' } = {}) {
+      const n = state.books.length + 1;
+      const b = blankBook(title || `第 ${n} 本`);
+      b.genre = genre; b.desc = desc;
+      state.books.push(b);
+      state.activeBookId = b.id;
+      touch('book-create', b);
+      return b;
+    },
+    switchTo(id) {
+      if (!state.books.some((b) => b.id === id)) return null;
+      state.activeBookId = id;
+      touch('book-switch', { id });
+      return book();
+    },
+    update(id, patch) {
+      const b = state.books.find((x) => x.id === id);
+      if (!b) return null;
+      Object.assign(b, patch);
+      touch('book-update', b);
+      return b;
+    },
+    remove(id) {
+      if (state.books.length <= 1) return false;   // 至少留一本
+      const i = state.books.findIndex((b) => b.id === id);
+      if (i < 0) return false;
+      state.books.splice(i, 1);
+      if (state.activeBookId === id) state.activeBookId = state.books[0].id;
+      touch('book-remove', { id });
+      return true;
+    },
+    /** 从另一本书拷设定过来（新书要不要沿用旧设定，交给用户决定） */
+    copySettingsFrom(fromId, kinds) {
+      const src = state.books.find((b) => b.id === fromId);
+      if (!src) return 0;
+      const dst = book();
+      const want = arr(kinds);
+      let n = 0;
+      src.settings.forEach((s) => {
+        if (want.length && !want.includes(s.kind)) return;
+        if (dst.settings.some((x) => x.name === s.name && x.kind === s.kind)) return;
+        dst.settings.push({ ...s, id: uid(), at: Date.now() });
+        n++;
+      });
+      touch('book-copy', { from: fromId, n });
+      return n;
+    },
+  };
+
+  /* ── 章节 ── */
   const chapter = {
-    all: () => state.chapters,
-    by(id) { return state.chapters.find((c) => c.id === id) || null; },
-    byNo(no) { return state.chapters.find((c) => c.no === no) || null; },
-    active() { return chapter.by(state.__activeChapter) || state.chapters[state.chapters.length - 1] || null; },
+    all: () => book().chapters,
+    by(id) { return book().chapters.find((c) => c.id === id) || null; },
+    byNo(no) { return book().chapters.find((c) => c.no === no) || null; },
+    active() {
+      const b = book();
+      return chapter.by(b.__activeChapter) || b.chapters[b.chapters.length - 1] || null;
+    },
     currentDraft(c) {
       if (!c) return null;
       return c.drafts.find((d) => d.id === c.activeId) || c.drafts[c.drafts.length - 1] || null;
@@ -173,21 +298,16 @@ const Store = (() => {
       return d ? d.text : '';
     },
     add({ title, text = '', source = '手写' } = {}) {
-      const no = state.chapters.reduce((m, c) => Math.max(m, c.no), 0) + 1;
-      const c = {
-        id: uid(), no,
-        title: title || `第${no}章`,
-        drafts: [],
-        activeId: null,
-        at: Date.now(),
-      };
+      const b = book();
+      const no = b.chapters.reduce((m, c) => Math.max(m, c.no), 0) + 1;
+      const c = { id: uid(), no, title: title || `第${no}章`, drafts: [], activeId: null, at: Date.now() };
       if (text.trim()) {
         const d = { id: uid(), ver: 1, text, source, at: Date.now() };
         c.drafts.push(d);
         c.activeId = d.id;
       }
-      state.chapters.push(c);
-      state.chapters.sort((a, b) => a.no - b.no);
+      b.chapters.push(c);
+      b.chapters.sort((x, y) => x.no - y.no);
       touch('chapter-add', c);
       return c;
     },
@@ -199,14 +319,14 @@ const Store = (() => {
       return c;
     },
     remove(id) {
-      const i = state.chapters.findIndex((c) => c.id === id);
+      const b = book();
+      const i = b.chapters.findIndex((c) => c.id === id);
       if (i < 0) return false;
-      state.chapters.splice(i, 1);
-      if (state.__activeChapter === id) state.__activeChapter = null;
+      b.chapters.splice(i, 1);
+      if (b.__activeChapter === id) b.__activeChapter = null;
       touch('chapter-remove', { id });
       return true;
     },
-    /** 追加一个新版本（平行稿），并把它设为当前 */
     newDraft(id, text, source = 'AI') {
       const c = chapter.by(id);
       if (!c || !text.trim()) return null;
@@ -217,7 +337,6 @@ const Store = (() => {
       touch('draft-add', { chapter: c, draft: d });
       return d;
     },
-    /** 覆盖当前版本 */
     setDraftText(id, text) {
       const c = chapter.by(id);
       if (!c) return null;
@@ -247,27 +366,43 @@ const Store = (() => {
       return true;
     },
     setActive(id) {
-      state.__activeChapter = id || null;
-      if (id) state.__lastOpened = { id, at: Date.now() };
+      const b = book();
+      b.__activeChapter = id || null;
+      if (id) b.__lastOpened = { id, at: Date.now() };
       save();
     },
   };
 
+  /* ── 设定 ── */
   const setting = {
-    all: () => state.settings,
+    all: () => book().settings,
     add({ kind = '设定', name = '', desc = '', quotes = [] } = {}) {
       const s = {
         id: uid(), kind, name, desc,
         quotes: arr(quotes).map(String).filter(Boolean).slice(0, 6),
         at: Date.now(),
       };
-      state.settings.unshift(s);
+      book().settings.unshift(s);
       touch('setting-add', s);
       return s;
     },
-    /** 把正文里的原句追加成「佐证」，去重后最多留 6 条 */
+    update(id, patch) {
+      const s = book().settings.find((x) => x.id === id);
+      if (!s) return null;
+      Object.assign(s, patch);
+      touch('setting-update', s);
+      return s;
+    },
+    remove(id) {
+      const b = book();
+      const i = b.settings.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      b.settings.splice(i, 1);
+      touch('setting-remove', { id });
+      return true;
+    },
     addQuotes(id, lines) {
-      const s = state.settings.find((x) => x.id === id);
+      const s = book().settings.find((x) => x.id === id);
       if (!s) return null;
       const set = new Set(s.quotes || []);
       arr(lines).forEach((l) => { const t = String(l).trim(); if (t) set.add(t); });
@@ -275,46 +410,50 @@ const Store = (() => {
       touch('setting-update', s);
       return s;
     },
-    update(id, patch) {
-      const s = state.settings.find((x) => x.id === id);
-      if (!s) return null;
-      Object.assign(s, patch);
-      touch('setting-update', s);
-      return s;
-    },
-    remove(id) {
-      const i = state.settings.findIndex((x) => x.id === id);
-      if (i < 0) return false;
-      state.settings.splice(i, 1);
-      touch('setting-remove', { id });
+    ignoreName(name) {
+      const n = String(name || '').trim();
+      if (!n) return false;
+      const b = book();
+      if (b.ignored.includes(n)) return false;
+      b.ignored.push(n);
+      touch('setting-ignore', { name: n });
       return true;
+    },
+    isIgnored(name) { return book().ignored.includes(String(name || '').trim()); },
+    ignoredNames() { return book().ignored; },
+    unignore(name) {
+      const b = book();
+      b.ignored = b.ignored.filter((x) => x !== name);
+      touch('setting-ignore', { name });
     },
   };
 
+  /* ── 世界线 ── */
   const line = {
-    all: () => state.lines,
+    all: () => book().lines,
     add({ name = '', desc = '', at = '', status = '进行中' } = {}) {
       const l = { id: uid(), name, desc, at, status, at2: Date.now() };
-      state.lines.unshift(l);
+      book().lines.unshift(l);
       touch('line-add', l);
       return l;
     },
     update(id, patch) {
-      const l = state.lines.find((x) => x.id === id);
+      const l = book().lines.find((x) => x.id === id);
       if (!l) return null;
       Object.assign(l, patch);
       touch('line-update', l);
       return l;
     },
     remove(id) {
-      const i = state.lines.findIndex((x) => x.id === id);
+      const b = book();
+      const i = b.lines.findIndex((x) => x.id === id);
       if (i < 0) return false;
-      state.lines.splice(i, 1);
+      b.lines.splice(i, 1);
       touch('line-remove', { id });
       return true;
     },
     toggle(id) {
-      const l = state.lines.find((x) => x.id === id);
+      const l = book().lines.find((x) => x.id === id);
       if (!l) return null;
       l.status = l.status === '已收束' ? '进行中' : '已收束';
       touch('line-update', l);
@@ -322,41 +461,43 @@ const Store = (() => {
     },
   };
 
+  /* ── 对话 ── */
   const chat = {
-    all: () => state.chat,
+    all: () => book().chat,
     push(role, text, extra = {}) {
+      const b = book();
       const m = { id: uid(), role, text, at: Date.now(), chapterId: null, clipped: false, ...extra };
-      state.chat.push(m);
-      if (state.chat.length > 400) state.chat.splice(0, state.chat.length - 400);
+      b.chat.push(m);
+      if (b.chat.length > 400) b.chat.splice(0, b.chat.length - 400);
       touch('chat-push', m);
       return m;
     },
     markClipped(id) {
-      const m = state.chat.find((x) => x.id === id);
+      const m = book().chat.find((x) => x.id === id);
       if (!m) return null;
       m.clipped = true;
       touch('chat-update', m);
       return m;
     },
-    /** 这条消息落盘后才算真正属于某一章，回填标记 */
     attach(id, chapterId) {
-      const m = state.chat.find((x) => x.id === id);
+      const m = book().chat.find((x) => x.id === id);
       if (!m || !chapterId) return null;
       m.chapterId = chapterId;
       touch('chat-update', m);
       return m;
     },
-    clear() { state.chat = []; touch('chat-clear'); },
-    /** 只清某一章的对话（章节本身不动） */
+    clear() { book().chat = []; touch('chat-clear'); },
     clearChapter(chapterId) {
       if (!chapterId) return 0;
-      const before = state.chat.length;
-      state.chat = state.chat.filter((m) => m.chapterId !== chapterId);
+      const b = book();
+      const before = b.chat.length;
+      b.chat = b.chat.filter((m) => m.chapterId !== chapterId);
       touch('chat-clear');
-      return before - state.chat.length;
+      return before - b.chat.length;
     },
   };
 
+  /* ── 配置（全局，跨书共用） ── */
   const config = {
     all: () => state.config,
     set(patch) { Object.assign(state.config, patch); touch('config'); },
@@ -366,24 +507,21 @@ const Store = (() => {
   /* ── 整档导入导出 ── */
   function exportJSON() { return JSON.stringify(state, null, 2); }
 
-  /** 只读解析：给导入预览用，不改动现有数据 */
   function parseArchive(text) {
     let raw;
     try { raw = JSON.parse(text); }
     catch (e) { return { ok: false, reason: 'JSON 解析失败：' + (e.message || e) }; }
     try {
       const inc = normalize(raw);
-      return {
-        ok: true,
-        incoming: inc,
-        counts: {
-          chapters: inc.chapters.length,
-          settings: inc.settings.length,
-          lines: inc.lines.length,
-          chat: inc.chat.length,
-        },
-        title: inc.book.title,
+      const b0 = inc.books[0] || blankBook();
+      const counts = {
+        books: inc.books.length,
+        chapters: inc.books.reduce((n, b) => n + b.chapters.length, 0),
+        settings: inc.books.reduce((n, b) => n + b.settings.length, 0),
+        lines: inc.books.reduce((n, b) => n + b.lines.length, 0),
+        chat: inc.books.reduce((n, b) => n + b.chat.length, 0),
       };
+      return { ok: true, incoming: inc, counts, title: b0.title };
     } catch (e) {
       return { ok: false, reason: '数据规格化失败：' + (e.message || e) };
     }
@@ -391,80 +529,36 @@ const Store = (() => {
 
   /**
    * 导入存档。
-   * @param {string} text 存档 JSON
-   * @param {{parts?:string[], mode?:'merge'|'replace'}} opts
-   *   parts 默认全选；mode=merge 追加（同名条目跳过），replace 用存档里的替换掉选中的部分
+   * mode=merge 追加（新开一本书装进去，不碰现有的）；replace 用存档替换现有全部书。
    */
   function importJSON(text, opts = {}) {
     const parsed = parseArchive(text);
     if (!parsed.ok) return parsed;
     const inc = parsed.incoming;
-    const parts = Array.isArray(opts.parts) ? opts.parts : ['chapters', 'settings', 'lines', 'chat'];
     const replace = opts.mode === 'replace';
-    const report = { chapters: 0, settings: 0, lines: 0, chat: 0, skipped: 0 };
+    const report = { books: 0, chapters: 0, settings: 0, lines: 0, chat: 0 };
 
-    if (parts.includes('chapters')) {
-      if (replace) {
-        state.chapters = inc.chapters;
-        report.chapters = inc.chapters.length;
-      } else {
-        let nextNo = state.chapters.reduce((m, c) => Math.max(m, c.no), 0);
-        inc.chapters.forEach((c) => {
-          nextNo += 1;
-          state.chapters.push({ ...c, id: uid(), no: nextNo });
-          report.chapters += 1;
-        });
-      }
-      state.chapters.sort((a, b) => a.no - b.no);
+    if (replace) {
+      state.books = inc.books.map((b) => normBook(b));
+      state.activeBookId = state.books[0].id;
+    } else {
+      // 每一本都原样收进来（重发 id 避免撞车），并切到第一本
+      inc.books.forEach((b) => {
+        const nb = normBook(b);
+        nb.id = uid();
+        nb.chapters.forEach((c) => { c.id = uid(); c.drafts.forEach((d) => { d.id = uid(); }); c.activeId = c.drafts.length ? c.drafts[c.drafts.length - 1].id : null; });
+        nb.settings.forEach((s) => { s.id = uid(); });
+        nb.lines.forEach((l) => { l.id = uid(); });
+        nb.chat.forEach((m) => { m.id = uid(); });
+        state.books.push(nb);
+        report.books++;
+        report.chapters += nb.chapters.length;
+        report.settings += nb.settings.length;
+        report.lines += nb.lines.length;
+        report.chat += nb.chat.length;
+      });
+      state.activeBookId = state.books[state.books.length - inc.books.length].id;
     }
-
-    if (parts.includes('settings')) {
-      if (replace) {
-        state.settings = inc.settings;
-        report.settings = inc.settings.length;
-      } else {
-        const seen = new Set(state.settings.map((s) => s.kind + '\u0000' + s.name));
-        inc.settings.forEach((s) => {
-          const k = s.kind + '\u0000' + s.name;
-          if (seen.has(k)) { report.skipped += 1; return; }
-          seen.add(k);
-          state.settings.unshift({ ...s, id: uid() });
-          report.settings += 1;
-        });
-      }
-    }
-
-    if (parts.includes('lines')) {
-      if (replace) {
-        state.lines = inc.lines;
-        report.lines = inc.lines.length;
-      } else {
-        const seen = new Set(state.lines.map((l) => l.name));
-        inc.lines.forEach((l) => {
-          if (seen.has(l.name)) { report.skipped += 1; return; }
-          seen.add(l.name);
-          state.lines.unshift({ ...l, id: uid() });
-          report.lines += 1;
-        });
-      }
-    }
-
-    if (parts.includes('chat')) {
-      if (replace) {
-        state.chat = inc.chat;
-        report.chat = inc.chat.length;
-      } else {
-        const seen = new Set(state.chat.map((m) => m.role + '\u0000' + m.text.slice(0, 80)));
-        inc.chat.forEach((m) => {
-          const k = m.role + '\u0000' + m.text.slice(0, 80);
-          if (seen.has(k)) { report.skipped += 1; return; }
-          seen.add(k);
-          state.chat.push({ ...m, id: uid() });
-          report.chat += 1;
-        });
-      }
-    }
-
     touch('import');
     return { ok: true, report };
   }
@@ -474,9 +568,9 @@ const Store = (() => {
 
   return {
     load, save, on, get, uid,
-    chapter, setting, line, chat, config,
+    books, chapter, setting, line, chat, config,
     exportJSON, parseArchive, importJSON, reset, isPersistFailed,
-    get activeChapterId() { return state && state.__activeChapter || null; },
-    get lastOpened() { return (state && state.__lastOpened) || null; },
+    get activeChapterId() { return book().__activeChapter || null; },
+    get lastOpened() { return book().__lastOpened || null; },
   };
 })();

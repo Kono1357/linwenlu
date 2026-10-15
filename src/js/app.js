@@ -167,36 +167,110 @@ const App = (() => {
     });
   }
 
-  /* ── 设置：作品 ── */
+  /* ── 作品：多本管理 ── */
   function openBookSettings() {
-    const b = Store.get().book;
-    const st = Store.get();
+    const bk = Store.books.current();
+    const list = Store.books.all();
+
     sheet('作品', `
+      <div class="sec-title">当前这本</div>
       <div class="field">
         <label class="field__label">书名</label>
-        <input class="input" id="bkTitle" value="${esc(b.title)}">
+        <input class="input" id="bkTitle" value="${esc(bk.title)}">
       </div>
       <div class="field">
         <label class="field__label">题材</label>
-        <input class="input" id="bkGenre" value="${esc(b.genre)}" placeholder="都市异能 / 玄幻 / 悬疑">
+        <input class="input" id="bkGenre" value="${esc(bk.genre)}" placeholder="都市异能 / 玄幻 / 悬疑">
       </div>
       <div class="field">
         <label class="field__label">一句话设定</label>
-        <textarea class="textarea" id="bkDesc" style="min-height:70px">${esc(b.desc)}</textarea>
+        <textarea class="textarea" id="bkDesc" style="min-height:70px">${esc(bk.desc)}</textarea>
       </div>
       <button class="btn" id="bkSave">保存</button>
-      <div class="sec-title">概览</div>
-      <div class="kv"><span class="kv__k">章节</span><span class="kv__v">${st.chapters.length}</span></div>
-      <div class="kv"><span class="kv__k">总字数</span><span class="kv__v">${st.chapters.reduce((n, c) => n + Store.chapter.textOf(c).length, 0)}</span></div>
-      <div class="kv"><span class="kv__k">设定</span><span class="kv__v">${st.settings.length}</span></div>
-      <div class="kv"><span class="kv__k">世界线</span><span class="kv__v">${st.lines.length}（未收束 ${st.lines.filter((l) => l.status !== '已收束').length}）</span></div>
+
+      <div class="sec-title">这本的产出</div>
+      <div class="kv"><span class="kv__k">章节</span><span class="kv__v">${bk.chapters.length}</span></div>
+      <div class="kv"><span class="kv__k">总字数</span><span class="kv__v">${bk.chapters.reduce((n, c) => n + Store.chapter.textOf(c).length, 0)}</span></div>
+      <div class="kv"><span class="kv__k">设定</span><span class="kv__v">${bk.settings.length}</span></div>
+      <div class="kv"><span class="kv__k">世界线</span><span class="kv__v">${bk.lines.length}（未收束 ${bk.lines.filter((l) => l.status !== '已收束').length}）</span></div>
+
+      <div class="sec-title">我的作品（${list.length} 本）</div>
+      ${list.map((b) => `
+        <div class="kv">
+          <span class="kv__k">${b.id === bk.id ? '● ' : ''}${esc(b.title)}</span>
+          <span class="kv__v">${b.chapters.length} 章 · ${b.settings.length} 设定</span>
+          ${b.id === bk.id ? '' : `<button class="mini-btn" data-sw="${b.id}">切过去</button>`}
+          ${list.length > 1 && b.id !== bk.id ? `<button class="mini-btn mini-btn--danger" data-del="${b.id}">删</button>` : ''}
+        </div>`).join('')}
+      <button class="btn btn--ghost" id="bkNew" style="margin-top:16px">+ 新开一本</button>
+      <div class="field__hint" style="margin-top:10px">
+        每本书的章节、设定、世界线、对话都是独立的，互不串。模型设置是全局的。
+      </div>
     `, (r) => {
       r.querySelector('#bkSave').onclick = () => {
-        Store.get().book.title = r.querySelector('#bkTitle').value.trim() || '未命名作品';
-        Store.get().book.genre = r.querySelector('#bkGenre').value.trim();
-        Store.get().book.desc = r.querySelector('#bkDesc').value.trim();
-        Store.save(); renderTop(); toast('已保存');
-        closeSheet();
+        Store.books.update(bk.id, {
+          title: r.querySelector('#bkTitle').value.trim() || '未命名作品',
+          genre: r.querySelector('#bkGenre').value.trim(),
+          desc: r.querySelector('#bkDesc').value.trim(),
+        });
+        renderTop(); toast('已保存'); closeSheet();
+      };
+      r.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {
+        Store.books.switchTo(b.dataset.sw);
+        closeSheet(); renderAll(); toast('已切到《' + Store.books.current().title + '》');
+      });
+      r.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+        const t = Store.books.all().find((x) => x.id === b.dataset.del);
+        if (!confirm(`删除《${t.title}》整本？章节、设定、对话都会一起没。此操作不可撤销。`)) return;
+        Store.books.remove(b.dataset.del);
+        closeSheet(); renderAll(); toast('已删除');
+      });
+      r.querySelector('#bkNew').onclick = () => openNewBook();
+    });
+  }
+
+  /* 新开一本：问清楚要不要把当前的设定带过去 */
+  function openNewBook() {
+    const src = Store.books.current();
+    const kinds = {};
+    src.settings.forEach((s) => { kinds[s.kind] = (kinds[s.kind] || 0) + 1; });
+    const kindList = Object.keys(kinds);
+
+    sheet('新开一本', `
+      <div class="field">
+        <label class="field__label">书名</label>
+        <input class="input" id="nbTitle" placeholder="第 ${Store.books.all().length + 1} 本">
+      </div>
+      <div class="field">
+        <label class="field__label">题材（可留空）</label>
+        <input class="input" id="nbGenre" placeholder="都市异能 / 玄幻 / 悬疑">
+      </div>
+      <div class="field">
+        <label class="field__label">一句话设定（可留空）</label>
+        <textarea class="textarea" id="nbDesc" style="min-height:60px"></textarea>
+      </div>
+      <div class="sec-title">要不要沿用《${esc(src.title)}》的设定</div>
+      <div class="field__hint" style="margin-bottom:8px">
+        不勾就是**全新开始**，跟这本书完全隔离（推荐，除非你写的是同世界观系列）。
+      </div>
+      ${kindList.length ? kindList.map((k) => `
+        <label class="pickrow">
+          <input type="checkbox" data-kind="${esc(k)}">
+          <span class="pickrow__k">${esc(k)}</span>
+          <span class="pickrow__n">${kinds[k]} 条</span>
+        </label>`).join('') : '<div class="field__hint">当前这本还没有设定可带。</div>'}
+      <button class="btn" id="nbGo" style="margin-top:18px">建这本</button>
+    `, (r) => {
+      r.querySelector('#nbGo').onclick = () => {
+        const title = r.querySelector('#nbTitle').value.trim();
+        const genre = r.querySelector('#nbGenre').value.trim();
+        const desc = r.querySelector('#nbDesc').value.trim();
+        const picked = [...r.querySelectorAll('[data-kind]:checked')].map((x) => x.dataset.kind);
+        const b = Store.books.create({ title, genre, desc });
+        let copied = 0;
+        if (picked.length) copied = Store.books.copySettingsFrom(src.id, picked);
+        closeSheet(); renderAll();
+        toast(copied ? `已新建《${b.title}》，带过来 ${copied} 条设定` : `已新建《${b.title}》`, 2600);
       };
     });
   }
@@ -231,7 +305,7 @@ const App = (() => {
       <div class="buildstamp" id="buildStamp"></div>
     `, (r) => {
       r.querySelector('#dExp').onclick = () => {
-        const name = (Store.get().book.title || '临文录').replace(/[\\/:*?"<>|]/g, '_');
+        const name = (Store.books.current().title || '临文录').replace(/[\\/:*?"<>|]/g, '_');
         download(name + '.json', Store.exportJSON(), 'application/json');
         toast('已导出');
       };
@@ -282,50 +356,45 @@ const App = (() => {
     });
   }
 
-  /* ── 导入预览：先看清楚，再决定要哪些、怎么合 ── */
+  /* ── 导入预览：先看清楚，再决定怎么放 ── */
   function openImportPreview(text, filename) {
     const p = Store.parseArchive(text);
     if (!p.ok) return toast('导入失败：' + p.reason, 3400);
     const n = p.counts;
-    const row = (key, label, num) => `
-      <label class="pickrow ${num ? '' : 'is-off'}">
-        <input type="checkbox" data-part="${key}" ${num ? 'checked' : 'disabled'}>
-        <span class="pickrow__k">${label}</span>
-        <span class="pickrow__n">${num}</span>
-      </label>`;
+    const row = (label, num) => `
+      <div class="kv"><span class="kv__k">${label}</span><span class="kv__v">${num}</span></div>`;
     sheet('导入预览', `
       <div class="field__hint" style="margin-bottom:12px">
         文件：${esc(filename || '（未命名）')}<br>
         作品：<b>${esc(p.title)}</b>
       </div>
-      <div class="sec-title">要导入哪些</div>
-      ${row('chapters', '章节', n.chapters)}
-      ${row('settings', '设定', n.settings)}
-      ${row('lines', '世界线', n.lines)}
-      ${row('chat', '对话记录', n.chat)}
-      <div class="sec-title">怎么合</div>
+      <div class="sec-title">里面有什么</div>
+      ${row('作品', n.books)}
+      ${row('章节', n.chapters)}
+      ${row('设定', n.settings)}
+      ${row('世界线', n.lines)}
+      ${row('对话记录', n.chat)}
+      <div class="sec-title">怎么放</div>
       <label class="pickrow">
         <input type="radio" name="imode" value="merge" checked>
-        <span class="pickrow__k">合并</span>
-        <span class="pickrow__n" style="font-size:11px">同名条目跳过，其他追加</span>
+        <span class="pickrow__k">装成新书</span>
+        <span class="pickrow__n" style="font-size:11px">不碰现有的</span>
       </label>
       <label class="pickrow">
         <input type="radio" name="imode" value="replace">
-        <span class="pickrow__k">替换</span>
-        <span class="pickrow__n" style="font-size:11px">用文件里的覆盖所选部分</span>
+        <span class="pickrow__k">替换全部</span>
+        <span class="pickrow__n" style="font-size:11px">现有作品会被清掉</span>
       </label>
       <button class="btn" id="ipGo" style="margin-top:18px">开始导入</button>
     `, (r) => {
       r.querySelector('#ipGo').onclick = () => {
-        const parts = [...r.querySelectorAll('[data-part]:checked')].map((x) => x.dataset.part);
-        if (!parts.length) return toast('至少选一项');
         const mode = (r.querySelector('input[name="imode"]:checked') || {}).value || 'merge';
-        const res = Store.importJSON(text, { parts, mode });
+        if (mode === 'replace' && !confirm('这会把现有全部作品替换掉，确定？')) return;
+        const res = Store.importJSON(text, { mode });
         if (!res.ok) return toast('导入失败：' + res.reason, 3400);
         const g = res.report;
         closeSheet(); renderAll();
-        toast(`已导入 章节${g.chapters} · 设定${g.settings} · 世界线${g.lines} · 对话${g.chat}` +
-          (g.skipped ? `（跳过重复 ${g.skipped}）` : ''), 3200);
+        toast(`已导入 ${g.books} 本 · 章节${g.chapters} · 设定${g.settings} · 世界线${g.lines}`, 3200);
       };
     });
   }
@@ -381,13 +450,14 @@ const App = (() => {
 
   /* ── 顶栏渲染 ── */
   function renderTop() {
-    const st = Store.get();
-    el.bookName.textContent = st.book.title || '临文录';
-    const total = st.chapters.reduce((n, c) => n + Store.chapter.textOf(c).length, 0);
+    const bk = Store.books.current();
+    el.bookName.textContent = bk.title || '临文录';
+    const chs = Store.chapter.all();
+    const total = chs.reduce((n, c) => n + Store.chapter.textOf(c).length, 0);
     const parts = [];
-    if (st.book.genre) parts.push(st.book.genre);
-    parts.push(`${st.chapters.length} 章`);
-    if (total > 0) parts.push((total >= 10000 ? (total / 10000).toFixed(1) + ' 万字' : total + ' 字'));
+    if (bk.genre) parts.push(bk.genre);
+    parts.push(`${chs.length} 章`);
+    if (total > 0) parts.push(total >= 10000 ? (total / 10000).toFixed(1) + ' 万字' : total + ' 字');
     el.bookMeta.textContent = parts.join(' · ');
   }
 
@@ -402,7 +472,7 @@ const App = (() => {
       </button>
       <button class="navrow" id="mBook">
         <span class="navrow__k">作品信息</span>
-        <span class="navrow__v">${esc(Store.get().book.title)}</span>
+        <span class="navrow__v">${esc(Store.books.current().title)}</span>
         <span class="navrow__a">›</span>
       </button>
       <button class="navrow" id="mData">
@@ -465,7 +535,7 @@ const App = (() => {
         r.querySelector('#vaCtx').onclick = () => { closeSheet(); ChatView.openContext(); };
         r.querySelector('#vaPull').onclick = () => {
           const md = Store.chat.all().map((m) => `### ${m.role === 'me' ? '我' : (m.role === 'ai' ? '临文' : '·')}\n${m.text}`).join('\n\n');
-          download((Store.get().book.title || '临文录') + '-对话.md', md, 'text/markdown');
+          download((Store.books.current().title || '临文录') + '-对话.md', md, 'text/markdown');
           toast('已导出对话');
         };
         r.querySelector('#vaClear').onclick = () => {
@@ -476,27 +546,62 @@ const App = (() => {
       return;
     }
     // world
+    const emptyCount = Store.setting.all().filter((s) => !s.desc.trim() && (s.quotes || []).length).length;
     sheet('世界线与设定', `
+      <button class="navrow" id="vaEnrichAll">
+        <span class="navrow__k">补全空说明</span>
+        <span class="navrow__v">${emptyCount ? emptyCount + ' 条待补' : '没有待补的'}</span>
+        <span class="navrow__a">›</span>
+      </button>
       <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaIgnored"><span class="navrow__k">忽略名单</span><span class="navrow__v">${Store.setting.ignoredNames().length} 个名字不再询问</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
-      <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入（可选要哪些）</span><span class="navrow__v">合并 / 替换</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
     `, (r) => {
+      r.querySelector('#vaEnrichAll').onclick = () => { closeSheet(); WorldView.enrichAllEmpty(); };
+      r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
       r.querySelector('#vaWorldExp').onclick = () => {
-        const st = Store.get();
-        download((st.book.title || '临文录') + '-设定.json',
-          JSON.stringify({ settings: st.settings, lines: st.lines }, null, 2), 'application/json');
+        const bk = Store.books.current();
+        download((bk.title || '临文录') + '-设定.json',
+          JSON.stringify({ settings: bk.settings, lines: bk.lines }, null, 2), 'application/json');
         toast('已导出');
       };
       r.querySelector('#vaWorldImp').onclick = () => { closeSheet(); openDataSettings('import'); };
     });
   }
 
+  /* ── 忽略名单：被拒绝过的名字，可以放出来重新问 ── */
+  function openIgnored() {
+    const list = Store.setting.ignoredNames();
+    sheet('忽略名单', `
+      <div class="field__hint" style="margin-bottom:12px">
+        这些名字你选过「不用」，系统不会再拿它们问你。放出来之后会重新参与识别。
+      </div>
+      ${list.length ? list.map((n) => `
+        <div class="kv">
+          <span class="kv__k">${esc(n)}</span>
+          <button class="mini-btn" data-un="${esc(n)}">放出来</button>
+        </div>`).join('') : '<div class="field__hint">名单是空的。</div>'}
+      ${list.length > 1 ? '<button class="btn btn--ghost" id="igClear" style="margin-top:16px">全部放出来</button>' : ''}
+    `, (r) => {
+      r.querySelectorAll('[data-un]').forEach((b) => b.onclick = () => {
+        Store.setting.unignore(b.dataset.un);
+        closeSheet(); openIgnored();
+      });
+      const c = r.querySelector('#igClear');
+      if (c) c.onclick = () => {
+        [...list].forEach((n) => Store.setting.unignore(n));
+        closeSheet(); openIgnored();
+      };
+    });
+  }
+
   function exportText() {
-    const st = Store.get();
-    const md = [`# ${st.book.title}`, st.book.genre ? `> ${st.book.genre}` : '', '']
-      .concat(st.chapters.map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
-    download((st.book.title || '临文录') + '.md', md, 'text/markdown');
+    const bk = Store.books.current();
+    const md = [`# ${bk.title}`, bk.genre ? `> ${bk.genre}` : '', '']
+      .concat(Store.chapter.all().map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
+    download((bk.title || '临文录') + '.md', md, 'text/markdown');
     toast('已导出正文');
   }
 
@@ -574,12 +679,21 @@ const App = (() => {
       if (e.key === 'Escape') { if (!el.sheet.hidden) closeSheet(); else ReadView.clearSelection(); }
     });
 
-    // 第一次使用：没有书也没有章节时给一点起手素材
-    const st = Store.get();
-    if (!st.chapters.length && !st.settings.length) {
-      st.book.title = '未命名作品';
-      Store.save();
+    // 手机键盘弹出会把底部输入框盖住，这里把它顶上来
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => {
+        const ae = document.activeElement;
+        if (!ae || (ae.tagName !== 'TEXTAREA' && ae.tagName !== 'INPUT')) return;
+        setTimeout(() => {
+          const vh = window.visualViewport.height;
+          const r = ae.getBoundingClientRect();
+          if (r.bottom > vh - 24) ae.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 140);
+      });
     }
+
+    // 第一次使用：确保至少有一本空书，界面才不会空转
+    Store.books.current();
 
     Store.on((type) => {
       if (type === 'persist-failed') {

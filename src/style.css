@@ -97,9 +97,22 @@ body {
   font-size: 15px;
   line-height: 1.6;
   display: flex; flex-direction: column;
-  height: 100dvh; min-height: 100vh;
+  height: 100vh;          /* 老浏览器兜底 */
+  height: 100dvh;         /* 移动端地址栏收缩时不跳 */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* 移动端：所有可点元素都不许有 300ms 延迟，也不许双击缩放 */
+button, a, [role="button"], input, select, textarea, label {
+  touch-action: manipulation;
+}
+/* 触摸反馈：手机上必须有"按下去"的感觉 */
+.mini-btn:active, .icon-btn:active, .chip-btn:active, .navrow:active,
+.chapter-item:active, .card:active, .seg__btn:active, .navchap:active,
+.tab:active, .btn:active, .pickrow:active {
+  transform: scale(.985);
+  transition-duration: .06s;
 }
 
 button, input, textarea, select {
@@ -146,9 +159,10 @@ button { cursor: pointer; }
 .icon-btn--key:hover { background: var(--accent-soft); }
 
 .mini-btn {
-  padding: 6px 12px; border-radius: var(--r);
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 38px; padding: 8px 14px; border-radius: var(--r);
   background: var(--surface); color: var(--ink-2);
-  font-size: 12.5px; white-space: nowrap;
+  font-size: 13px; white-space: nowrap; line-height: 1.2;
   border: 1px solid var(--line-2);
   transition: all .15s var(--ease);
 }
@@ -616,9 +630,11 @@ input[type="number"] { font-family: var(--mono); }
 .chips { display: flex; gap: 6px; overflow-x: auto; padding: 9px 0 2px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
 .chip-btn {
-  flex: 0 0 auto; padding: 5px 13px; border-radius: var(--r-pill);
+  flex: 0 0 auto; min-height: 34px;
+  display: inline-flex; align-items: center;
+  padding: 7px 14px; border-radius: var(--r-pill);
   background: var(--surface); border: 1px solid var(--line);
-  color: var(--ink-3); font-size: 12px; white-space: nowrap;
+  color: var(--ink-3); font-size: 12.5px; white-space: nowrap;
   transition: all .15s var(--ease);
 }
 .chip-btn:hover { border-color: var(--line-2); color: var(--ink-2); }
@@ -826,4 +842,31 @@ body.is-stream .reader__head { display: none; }
   .chat__flow { padding: 16px 13px 8px; }
   .selbar { bottom: 12px; }
   .card__acts { opacity: 1; }
+
+  /* iOS 有一条硬规矩：输入框字号 < 16px，聚焦时会把整页放大。
+     这是"网页在手机上像网页"的头号原因，所以这里必须顶到 16px。 */
+  input, textarea, select, .input, .textarea, .select,
+  .composer textarea, .input--sm {
+    font-size: 16px !important;
+  }
+  /* 顶栏按钮与工具条在小屏上给足手指空间 */
+  .icon-btn { width: 42px; height: 42px; }
+  .reader__head { padding: 10px 12px; gap: 8px; }
+  .reader__tools { gap: 5px; }
+  .reader__tools .mini-btn { padding: 8px 11px; }
+  .chat__headActs { gap: 5px; }
+  .seg__btn { padding: 9px 20px; }
+  /* 抽屉在手机上从底部上来，拇指够得着 */
+  .sheet__panel {
+    top: auto; left: 0; right: 0; bottom: 0;
+    width: 100%; max-height: 88dvh;
+    border-left: none; border-top: 1px solid var(--line-2);
+    border-radius: 18px 18px 0 0;
+    animation: sheetUp .24s var(--ease);
+  }
+  @keyframes sheetUp { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+  .sheet__head { border-radius: 18px 18px 0 0; }
+  .sheet__body { max-height: calc(88dvh - 60px); }
+  /* 正文选中后工具条不挡字 */
+  .selbar { max-width: calc(100% - 16px); }
 }

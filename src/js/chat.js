@@ -461,22 +461,40 @@ const ChatView = (() => {
         ? `<div class="namequote">${n.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>`
         : ''}
         </div>`).join('')}
-      <button class="btn" id="nmSave" style="margin-top:16px">存进设定</button>
-      <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用</button>
+      <label class="pickrow" style="border-bottom:none;margin-top:10px">
+        <input type="checkbox" id="nmEnrich" checked>
+        <span class="pickrow__k" style="font-size:13px">入库后让 AI 把说明也补全</span>
+      </label>
+      <button class="btn" id="nmSave" style="margin-top:14px">存进设定</button>
+      <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用（以后别再问这些名字）</button>
     `, (r) => {
-      r.querySelector('#nmSkip').onclick = () => App.closeSheet();
+      r.querySelector('#nmSkip').onclick = () => {
+        names.forEach((x) => Store.setting.ignoreName(x.name));
+        App.closeSheet();
+        if (WorldView) WorldView.render();
+        App.toast('已加入忽略名单，以后不再问', 2400);
+      };
       r.querySelector('#nmSave').onclick = () => {
-        let n = 0;
+        const wantEnrich = r.querySelector('#nmEnrich') && r.querySelector('#nmEnrich').checked;
+        const ids = [];
         names.forEach((x, i) => {
           const cb = r.querySelector(`[data-nm="${i}"]`);
           if (!cb || !cb.checked) return;
           const kind = r.querySelector(`[data-nk="${i}"]`).value;
-          Store.setting.add({ kind, name: x.name, desc: '', quotes: x.quotes || [] });
-          n++;
+          const s = Store.setting.add({ kind, name: x.name, desc: '', quotes: x.quotes || [] });
+          ids.push(s.id);
         });
         App.closeSheet();
         if (WorldView) WorldView.render();
-        App.toast(n ? `已存进设定 ${n} 条（含正文佐证），可去补说明` : '没有新增', 2600);
+        if (!ids.length) return App.toast('没有新增');
+        App.toast(`已存进设定 ${ids.length} 条${wantEnrich ? '，正在补全说明…' : ''}`, 2600);
+        if (wantEnrich && typeof WorldView !== 'undefined' && WorldView) {
+          (async () => {
+            for (const id of ids) await WorldView.enrich(id, { silent: true });
+            WorldView.render();
+            App.toast(`说明已补全 ${ids.length} 条`, 2400);
+          })();
+        }
       };
     });
   }

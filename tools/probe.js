@@ -630,17 +630,17 @@ class CDP {
     report.steps.push({
       step: 'theme', check: await cdp.eval(`(function(){
       try {
-        var root = document.documentElement;
         var lightBg = getComputedStyle(document.body).backgroundColor;
-        var lightAccent = getComputedStyle(root).getPropertyValue('--accent').trim();
+        var lightAccent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
         document.body.classList.add('theme-dark');
         var darkBg = getComputedStyle(document.body).backgroundColor;
-        var darkAccent = getComputedStyle(root).getPropertyValue('--accent').trim();
+        var darkAccent = getComputedStyle(document.body).getPropertyValue('--accent').trim();
         document.body.classList.remove('theme-dark');
-        var paper = getComputedStyle(root).getPropertyValue('--paper').trim();
-        var bodyFont = getComputedStyle(document.body).fontFamily;
+        var paper = getComputedStyle(document.body).getPropertyValue('--paper').trim();
         var readerIndent = document.querySelector('#reader p')
           ? getComputedStyle(document.querySelector('#reader p')).textIndent : null;
+        var readerFont = document.querySelector('#reader p')
+          ? getComputedStyle(document.querySelector('#reader p')).fontFamily.split(',')[0] : null;
         return {
           默认浅色: lightBg === 'rgb(246, 243, 238)',
           浅色底: lightBg,
@@ -649,7 +649,109 @@ class CDP {
           深色主色: darkAccent,
           深浅确实不同: lightBg !== darkBg && lightAccent !== darkAccent,
           正文纸面: paper,
-          正文首行缩进: readerIndent
+          正文首行缩进: readerIndent,
+          正文字体: readerFont
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉖ 手机可点性：触摸目标够不够大、有没有横向溢出、字会不会太小
+    report.steps.push({
+      step: 'touch', check: await cdp.eval(`(function(){
+      var vw = document.documentElement.clientWidth;
+      var small = [], tiny = [], overflow = [];
+      document.querySelectorAll('button, a, input, select, textarea, [data-ch], [data-set], [data-line]').forEach(function(el){
+        if (!el.getClientRects().length) return;
+        var r = el.getBoundingClientRect();
+        if (r.width < 6 || r.height < 6) return;
+        if (r.right > vw + 1 || r.left < -1) {
+          overflow.push((el.className || el.tagName) + ' r=' + Math.round(r.right));
+        }
+        if (r.height < 36) {
+          var cs = getComputedStyle(el);
+          var fs = parseFloat(cs.fontSize);
+          var t = (el.textContent || '').trim().slice(0, 10) || el.getAttribute('placeholder') || el.type || '';
+          small.push({ k: (el.className || el.tagName).toString().split(' ')[0], t: t, w: Math.round(r.width), h: Math.round(r.height), fs: fs });
+          if (fs < 12) tiny.push({ t: t, fs: fs });
+        }
+      });
+      // 去重（同类只留一个样本）
+      var seen = {}, uniq = [];
+      small.forEach(function(x){ if (!seen[x.k]) { seen[x.k] = 1; uniq.push(x); } });
+      return {
+        视口宽: vw,
+        文档宽: document.documentElement.scrollWidth,
+        横向溢出: overflow.length ? overflow.slice(0, 5) : '无',
+        偏小的可点元素: uniq.slice(0, 12),
+        偏小的总数: small.length,
+        字号过小的: tiny.length
+      };
+    })()`) });
+
+    // ㉗ 所有类别的设定都要进上下文（以前只有人物会进）
+    report.steps.push({
+      step: 'ctxkinds', check: await cdp.eval(`(function(){
+      try {
+        Store.setting.all().slice().forEach(function(s){ Store.setting.remove(s.id); });
+        Store.setting.add({ kind: '人物', name: '甲某人' });
+        Store.setting.add({ kind: '地点', name: '东堤码头' });
+        Store.setting.add({ kind: '规则', name: '夜禁飞' });
+        Store.setting.add({ kind: '物件', name: '星门钥匙' });
+        var ctx = AI.buildContext('随便写点什么', null);
+        return {
+          段落: ctx.sections.map(function(s){ return s.key; }).join(' | '),
+          地点进了: /东堤码头/.test(ctx.text),
+          规则进了: /夜禁飞/.test(ctx.text),
+          物件进了: /星门钥匙/.test(ctx.text)
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉘ 多本书：各写各的，互不串
+    report.steps.push({
+      step: 'multibook', check: await cdp.eval(`(function(){
+      try {
+        var b1 = Store.books.current();
+        Store.chapter.add({ title: '书一的章' });
+        Store.setting.add({ kind: '人物', name: '书一的人' });
+
+        var b2 = Store.books.create({ title: '第二本书' });
+        var freshCh = Store.chapter.all().length;
+        var freshSet = Store.setting.all().length;
+        Store.chapter.add({ title: '书二的章' });
+        Store.setting.add({ kind: '人物', name: '书二的人' });
+
+        Store.books.switchTo(b1.id);
+        var ch1 = Store.chapter.all().map(function(c){ return c.title; });
+        var st1 = Store.setting.all().map(function(s){ return s.name; });
+
+        // 借用设定：新书可以按类别带过来
+        Store.books.switchTo(b2.id);
+        var copied = Store.books.copySettingsFrom(b1.id, ['人物']);
+
+        Store.books.switchTo(b1.id);
+        return {
+          作品数: Store.books.all().length,
+          新书从空白开始: freshCh === 0 && freshSet === 0,
+          书一有: ch1.join('、') + ' / ' + st1.join('、'),
+          书之间不串: ch1.indexOf('书二的章') < 0 && st1.indexOf('书二的人') < 0,
+          可借用设定: copied >= 1
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉙ 忽略名单：拒绝过的名字不再问
+    report.steps.push({
+      step: 'ignored', check: await cdp.eval(`(function(){
+      try {
+        var t = '沈砚推开门。周砚白抬头看了他一眼。沈砚没说话。周砚白也没说话。沈砚走了。';
+        var before = AI.findNewNames(t).map(function(x){ return x.name; });
+        before.forEach(function(n){ Store.setting.ignoreName(n); });
+        var after = AI.findNewNames(t).map(function(x){ return x.name; });
+        return {
+          第一次会问: before.join('、'),
+          忽略后不再问: after.length === 0,
+          名单里有: Store.setting.ignoredNames().length
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });

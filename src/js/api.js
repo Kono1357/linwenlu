@@ -37,19 +37,21 @@ const AI = (() => {
     const c = chapterId ? Store.chapter.by(chapterId) : Store.chapter.active();
     const sections = [];
 
-    const head = [`《${st.book.title}》`];
-    if (st.book.genre) head.push(st.book.genre);
-    if (st.book.desc) head.push(cutHead(st.book.desc, 200));
+    const bk = Store.books.current();
+    const head = [`《${bk.title}》`];
+    if (bk.genre) head.push(bk.genre);
+    if (bk.desc) head.push(cutHead(bk.desc, 200));
     sections.push({ key: 'book', title: '作品', text: head.join(' · ') });
 
     if (cfg.style) sections.push({ key: 'style', title: '文风', text: cfg.style });
 
-    // 设定：先相关命中，再按时间补足
+    // 设定：**按类别分组，每类都完整带一份** ——
+    // 之前只有「人物」整表带，地点/规则/物件只能靠关键词撞运气，所以那些类别的设定等于没写。
     const probe = [ask, c ? Store.chapter.textOf(c) : ''].join('\n');
-    const all = st.settings;
+    const all = Store.setting.all();
     const people = all.filter((s) => s.kind === '人物');
 
-    // 人物表：整表带上，不受条数限制 —— 这是让 AI 自己把配角写出来的前提
+    // 人物单独成段（最重要，整表带）
     if (people.length) {
       const ranked = people.slice().sort((a, b) => {
         const ai = relevant(probe, a) ? 0 : 1;
@@ -59,23 +61,29 @@ const AI = (() => {
       sections.push({
         key: 'cast',
         title: `人物表（共 ${people.length} 人，必须使用这些名字）`,
-        text: ranked.slice(0, 40).map((s) => `· ${s.name}${s.desc ? '：' + cutHead(s.desc, 130) : ''}`).join('\n'),
+        text: ranked.slice(0, 40).map((s) => `· ${s.name}${s.desc ? '：' + cutHead(s.desc, 150) : ''}`).join('\n'),
       });
     }
 
-    const rest0 = all.filter((s) => s.kind !== '人物');
-    const hit = rest0.filter((s) => relevant(probe, s));
-    const rest = rest0.filter((s) => !hit.includes(s));
-    const picked = hit.concat(rest).slice(0, Math.max(0, cfg.ctxSettings | 0));
-    if (picked.length) {
+    // 其余类别各自成段，每类都给配额，不再互相挤
+    const quota = Math.max(4, Math.round((cfg.ctxSettings | 0) / 2) || 6);
+    const kinds = {};
+    all.filter((s) => s.kind !== '人物').forEach((s) => {
+      (kinds[s.kind] = kinds[s.kind] || []).push(s);
+    });
+    Object.keys(kinds).forEach((kind) => {
+      const list = kinds[kind];
+      const hit = list.filter((s) => relevant(probe, s));
+      const rest = list.filter((s) => !hit.includes(s));
+      const picked = hit.concat(rest).slice(0, quota);
       sections.push({
-        key: 'settings',
-        title: `设定（${picked.length}/${rest0.length}）`,
-        text: picked.map((s) => `· ${s.name}〔${s.kind}〕${s.desc ? '：' + cutHead(s.desc, 160) : ''}`).join('\n'),
+        key: 'set-' + kind,
+        title: `${kind}（${picked.length}/${list.length}${list.length > quota ? '，与本章相关优先' : ''}）`,
+        text: picked.map((s) => `· ${s.name}${s.desc ? '：' + cutHead(s.desc, 170) : ''}`).join('\n'),
       });
-    }
+    });
 
-    const open = st.lines.filter((l) => l.status !== '已收束');
+    const open = Store.line.all().filter((l) => l.status !== '已收束');
     if (open.length) {
       sections.push({
         key: 'lines',
@@ -86,7 +94,7 @@ const AI = (() => {
 
     // 上一章结尾
     if (c && (cfg.ctxPrev | 0) > 0) {
-      const prev = st.chapters.filter((x) => x.no < c.no).pop();
+      const prev = Store.chapter.all().filter((x) => x.no < c.no).pop();
       const pt = prev ? Store.chapter.textOf(prev) : '';
       if (pt.trim()) {
         sections.push({ key: 'prev', title: `上一章结尾 · ${prev.title}`, text: cut(pt, 500) });
@@ -131,7 +139,7 @@ const AI = (() => {
       : '';
 
     const sys = [
-      `你是长篇小说写作助手，正在协助作者创作《${st.book.title}》。`,
+      `你是长篇小说写作助手，正在协助作者创作《${Store.books.current().title}》。`,
       st.config.style ? `文风要求：${st.config.style}` : '',
       '严格遵守下面提供的设定与世界线，不要自创与设定冲突的内容。',
       '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
@@ -174,6 +182,34 @@ const AI = (() => {
       { role: 'system', content: sys },
       { role: 'user', content: `【本章全文】\n${String(text || '').trim()}\n\n请输出修改后的全文。` },
     ];
+  }
+
+  /* ── 让 AI 把一条设定「写厚」：只依据正文原句归纳，不许编 ── */
+  const KIND_GUIDE = {
+    人物: '外貌特征（体型、常穿什么、有无疤痕饰物）、性格脾气、说话习惯或口癖、和主角及其他人的关系',
+    地点: '位置与环境、不同时段的样子、气氛、有什么特殊之处',
+    物件: '外形与材质、来历、作用或象征意义',
+    规则: '规则内容、适用范围、限制条件、违反的代价',
+    设定: '它是什么、怎么运作、对故事有什么影响',
+  };
+
+  function buildEnrichMessages(setting) {
+    const kind = setting.kind || '设定';
+    const guide = KIND_GUIDE[kind] || '它是什么、有什么特点';
+    const quotes = (setting.quotes || []).filter(Boolean).slice(0, 8);
+
+    const sys = '你在整理小说设定集。**只根据给出的原文片段归纳**，原文没写的不要编。'
+      + '输出 3—6 行，每行以「· 」开头，每行一句，不要标题、不要小标题、不要解释、不要 markdown。';
+
+    const user = [
+      `【条目】${setting.name}（${kind}）`,
+      quotes.length ? `【正文原句】\n${quotes.map((q) => '· ' + q).join('\n')}` : '【正文原句】（还没有，请只根据名字给出最保守的推测，并在每行末尾标注「待补」）',
+      '',
+      `请归纳这个${kind}的：${guide}。`,
+      '原文只提到一部分就只写那一部分，不要凑数。',
+    ].join('\n');
+
+    return [{ role: 'system', content: sys }, { role: 'user', content: user }];
   }
 
   /* ── 只生成提示词（降级用） ── */
@@ -287,7 +323,29 @@ const AI = (() => {
   const STOPCHAR = new Set(('把被让给和跟向从又也都没很才就还只像似乎便即这里那着你我他她它们的是了在有不之与其并且但因为所以如果虽然'
     + '说道问答笑走来去站坐看想听见叫喊吃喝拉睡望盯摇点抓拿放推拉踢打').split(''));
   const STOP = new Set(['黄金', '白天', '马上', '高大', '温柔', '江南', '风景', '行李', '手掌', '树木', '花样', '毛病', '程度', '程序', '的确', '仿佛', '石头', '安静', '常常', '通常', '平静', '外面', '上面', '下面', '里面', '前面', '后面', '旁边', '周围', '对方', '结果', '原因', '情况', '时候', '地方', '东西', '事情', '样子', '心里', '眼神', '声音', '问题', '办法', '世界', '人生', '男人', '女人', '孩子', '老人', '学生', '老师', '医生', '警察', '老板', '经理', '司机', '服务',
-    '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数']);
+    '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数',
+    '文明', '文章', '文化', '天气', '风度', '风格', '风景', '风里', '高处', '高兴', '高手', '高处', '市场', '市里', '安全', '面子', '个子', '影子', '影子', '日子', '样子', '曲子', '嗓子',
+    '于是', '终于', '关于', '由于', '对于', '至于', '甚至', '尤其', '曾经', '已经', '立刻', '马上', '忽然', '突然', '果然', '竟然', '居然', '虽然', '固然',
+    '马路', '马上', '道路', '路口', '门口', '巷口', '街口', '出口', '入口', '窗口', '港口', '借口', '伤口', '开口',
+    '白天', '白天', '白色', '白菜', '白发', '白酒', '明白', '坦白', '空白',
+    '空气', '空白', '抽空', '天空', '星空', '太空', '高空',
+    '黄金', '黄土', '黄昏', '黄河', '黄河', '黄沙',
+    '林子', '林里', '林中', '森林', '树林',
+    '沈默', '沉着', '沉着']);
+
+  /** 名字附近出现这些字，才像是在写"人" */
+  const HUMAN_CTX = /[说道问答喊叫哭笑走来去站坐看想听望盯点摇抬低转沉默咬回身手动]/;
+
+  /** 两个名字是不是同一个人的不同叫法（老陈 / 陈） */
+  function similarName(a, b) {
+    const x = String(a || '').trim(), y = String(b || '').trim();
+    if (!x || !y) return false;
+    if (x === y) return true;
+    if (x.length >= 2 && y.length >= 2 && Math.abs(x.length - y.length) <= 1) {
+      return x.includes(y) || y.includes(x);
+    }
+    return false;
+  }
 
   /**
    * 从正文里认名字，并带回「证据句」——
@@ -300,6 +358,7 @@ const AI = (() => {
     const knownSet = new Set(known || []);
     const count = new Map();
     const quotes = new Map();
+    const human = new Map();     // 「像人」的证据数，用来滤掉"高大""安静"这类词
 
     const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
 
@@ -323,6 +382,12 @@ const AI = (() => {
         if (!seenHere.has(name)) {
           seenHere.add(name);
           count.set(name, (count.get(name) || 0) + 1);
+
+          const around = sent.slice(Math.max(0, i - 2), i + name.length + 4);
+          const after = sent.slice(i + name.length, i + name.length + 1);
+          if (HUMAN_CTX.test(around)) human.set(name, (human.get(name) || 0) + 1);
+          if (/^[「『"]/.test(after)) human.set(name, (human.get(name) || 0) + 1);
+
           const arr = quotes.get(name) || [];
           if (arr.length < 3 && !arr.includes(sent)) arr.push(sent);
           quotes.set(name, arr);
@@ -332,16 +397,23 @@ const AI = (() => {
     }
 
     return [...count.entries()]
-      .filter(([, n]) => n >= 2)
+      .filter(([name, n]) => n >= 2 && (human.get(name) || 0) >= 1)   // 出现过两次以上，且至少有"像人"的上下文
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([name, n]) => ({ name, n, quotes: quotes.get(name) || [] }));
   }
 
-  /** 扫一批文本，找出还没进设定的名字 */
+  /** 扫一批文本，找出「还值得问一句」的名字：
+      已经在设定里的（含"老陈/陈"这种叫法差异）不问，用户拒绝过的不问。 */
   function findNewNames(text) {
     const known = Store.setting.all().map((s) => s.name);
-    return extractNames(text, known);
+    const ignored = Store.setting.ignoredNames();
+    return extractNames(text, [])
+      .filter((x) => {
+        if (ignored.includes(x.name)) return false;
+        if (known.some((k) => similarName(k, x.name))) return false;
+        return true;
+      });
   }
 
   /** 反过来：从文本里给「已经入库的名字」收集原句，用来补佐证 */
@@ -360,7 +432,7 @@ const AI = (() => {
   }
 
   return {
-    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages,
+    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages, buildEnrichMessages,
     generate, probe, cut, extractNames, findNewNames, quotesFor,
   };
 })();
