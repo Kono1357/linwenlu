@@ -95,19 +95,11 @@ const App = (() => {
         <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
       </div>
       <div class="sec-title">写作铁律</div>
-      <label class="pickrow">
-        <input type="checkbox" id="cfgDeai" ${c.deai === false ? '' : 'checked'}>
-        <span class="pickrow__k">每次生成都注入下面的铁律</span>
-      </label>
-      <div class="field">
-        <label class="field__label">内容可以随便改、删、加</label>
-        <textarea class="textarea" id="cfgDeaiRules" style="min-height:230px">${esc(c.deaiRules || AI.DEAI_RULES)}</textarea>
-        <div class="field__hint">
-          这一整块会**原样**送进模型，所以加规矩就直接写一行，不想要的整行删掉。
-          下面这些是预设，不是你只能用的东西。
-        </div>
-        <button class="mini-btn" id="cfgDeaiReset" style="margin-top:10px">恢复预设</button>
-      </div>
+      <button class="navrow" id="cfgRulesGo">
+        <span class="navrow__k">去改写作铁律</span>
+        <span class="navrow__v">${Store.get().config.deai === false ? '已关闭' : '单独一页'}</span>
+        <span class="navrow__a">›</span>
+      </button>
 
       <div class="sec-title">设定</div>
       <label class="pickrow">
@@ -175,6 +167,8 @@ const App = (() => {
         g('#cfgDeaiRules').value = AI.DEAI_RULES;
         toast('已恢复成预设，记得点保存');
       };
+      const goRules = g('#cfgRulesGo');
+      if (goRules) goRules.onclick = () => { closeSheet(); openRules(); };
 
       g('#cfgSave').onclick = () => {
         const cm = r.querySelector('input[name="cmode"]:checked');
@@ -190,8 +184,8 @@ const App = (() => {
           commitMode: cm ? cm.value : 'ask',
           targetWords: Number(g('#cfgWords').value) || 0,
           theme: th ? th.value : 'light',
-          deai: g('#cfgDeai') ? g('#cfgDeai').checked : true,
-          deaiRules: g('#cfgDeaiRules') ? g('#cfgDeaiRules').value.trim() : '',
+          deai: Store.get().config.deai,          // 这两项在「写作铁律」那一页改，别在这里覆盖
+          deaiRules: Store.get().config.deaiRules,
           autoSetting: g('#cfgAutoSet') ? g('#cfgAutoSet').checked : true,
         });
         applyTheme();
@@ -505,10 +499,18 @@ const App = (() => {
   /* ── 设置中心：⚙ 一键直达，改模型不用翻 ── */
   function openSettings() {
     const ready = Store.config.ready();
+    const cfg = Store.get().config;
+    const ruleState = cfg.deai === false ? '已关闭'
+      : (String(cfg.deaiRules || '').trim() ? '已自定义' : '预设 11 条');
     sheet('设置', `
+      <button class="navrow" id="mRules">
+        <span class="navrow__k">写作铁律</span>
+        <span class="navrow__v">${ruleState} · 点开就能改</span>
+        <span class="navrow__a">›</span>
+      </button>
       <button class="navrow" id="mModel">
         <span class="navrow__k">模型设置</span>
-        <span class="navrow__v">${ready ? esc(Store.get().config.model) : '<span style="color:var(--red)">还没配</span>'}</span>
+        <span class="navrow__v">${ready ? esc(cfg.model) : '<span style="color:var(--red)">还没配</span>'}</span>
         <span class="navrow__a">›</span>
       </button>
       <button class="navrow" id="mBook">
@@ -524,13 +526,55 @@ const App = (() => {
       <div class="sec-title">快捷键</div>
       <div class="field__hint">
         Ctrl / ⌘ + Enter —— 发送<br>
-        选中正文 —— 改写 / 扩写 / 提问 / 存设定<br>
-        点 ◎ —— 专注阅读（右上角 ✕ 退出）
+        选中正文 —— 续写 / 改写 / 扩写 / 提问 / 存设定<br>
+        手机上点章节进正文，左上角 ‹ 回目录
       </div>
     `, (r) => {
+      r.querySelector('#mRules').onclick = () => { closeSheet(); openRules(); };
       r.querySelector('#mModel').onclick = () => { closeSheet(); openModelSettings(); };
       r.querySelector('#mBook').onclick = () => { closeSheet(); openBookSettings(); };
       r.querySelector('#mData').onclick = () => { closeSheet(); openDataSettings(); };
+    });
+  }
+
+  /* ── 写作铁律：单独一个面板 ──
+     之前它埋在「模型设置」里，那个面板有 1900px 高，手机上要滚很久才看得到，
+     等于没有。现在从 ⚙ 进来第一眼就是它。 */
+  function openRules() {
+    const cfg = Store.get().config;
+    sheet('写作铁律', `
+      <div class="field__hint" style="margin-bottom:16px">
+        这里写的东西会<b>原样</b>跟着每次生成送进模型。<br>
+        下面这段是<b>预设</b>，不是规定 —— 改、删、加都随你。
+      </div>
+      <label class="pickrow">
+        <input type="checkbox" id="rlOn" ${cfg.deai === false ? '' : 'checked'}>
+        <span class="pickrow__k">启用（关掉就完全不注入）</span>
+      </label>
+      <div class="field" style="margin-top:14px">
+        <label class="field__label">内容（一行一条）</label>
+        <textarea class="textarea" id="rlText" style="min-height:320px">${esc(cfg.deaiRules || AI.DEAI_RULES)}</textarea>
+      </div>
+      <button class="btn" id="rlSave">保存</button>
+      <button class="btn btn--ghost" id="rlReset" style="margin-top:8px">恢复成预设</button>
+      <div class="field__hint" style="margin-top:12px">
+        例：想加一条「对话不许超过三句连着说」，直接在末尾另起一行写就行。
+        哪条不要，把那一行删掉。
+      </div>
+    `, (r) => {
+      const ta = r.querySelector('#rlText');
+      const on = r.querySelector('#rlOn');
+      r.querySelector('#rlSave').onclick = () => {
+        Store.config.set({ deai: on.checked, deaiRules: ta.value.trim() });
+        closeSheet();
+        ChatView.hint();
+        toast('已保存');
+      };
+      r.querySelector('#rlReset').onclick = () => {
+        ta.value = AI.DEAI_RULES;
+        on.checked = true;
+        toast('已恢复成预设，记得点保存');
+      };
     });
   }
 
@@ -792,7 +836,7 @@ const App = (() => {
 
   return {
     boot, go, toast, sheet, closeSheet, renderAll,
-    openSettings, openModelSettings, openBookSettings, openNewBook,
+    openSettings, openRules, openModelSettings, openBookSettings, openNewBook,
     openDataSettings, openImportPreview, openIgnored, openViewAction, exportText,
     sheetError: () => lastSheetError,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),

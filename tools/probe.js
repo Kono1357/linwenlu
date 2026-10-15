@@ -855,6 +855,7 @@ class CDP {
 
     const panelList = [
       ['设置总览', `App.openSettings()`],
+      ['写作铁律', `App.openRules()`],
       ['模型与外观', `App.openModelSettings()`],
       ['作品', `App.openBookSettings()`],
       ['新开一本', `App.openNewBook()`],
@@ -910,35 +911,55 @@ class CDP {
     await cdp.eval(`App.go('read')`);
     report.steps.push({ step: 'panels', check: { 绑定失败数: bindFails, 明细: panelReport } });
 
-    // ㉞ 写作铁律是可编辑的预设，不是写死的
+    // ㉞ 写作铁律：从 ⚙ 进来第一眼就能看到、能改
     report.steps.push({
       step: 'rules', check: await cdp.eval(`(function(){
       try {
-        App.openModelSettings();
-        var ta = document.getElementById('cfgDeaiRules');
+        // 1) 设置总览里有没有这个一级入口
+        App.openSettings();
+        var entry = document.getElementById('mRules');
+        var entryVisible = !!(entry && entry.getClientRects().length);
+        var entryText = entry ? entry.textContent.replace(/\\s+/g, '') : '';
+        entry.click();
+        // 2) 是否直接落到编辑页
+        var ta = document.getElementById('rlText');
+        var landed = !!ta;
         var preset = ta ? ta.value : '';
         var lines = preset.split('\\n').filter(function(l){ return l.trim(); }).length;
-        // 作者改一行 → 保存 → 生成时必须用改过的
+
+        // 3) 改一行 → 保存 → 生成时必须用改过的
         ta.value = preset + '\\n· 我自己加的一条';
-        document.getElementById('cfgSave').click();
+        document.getElementById('rlSave').click();
+        var savedCfg = Store.get().config.deaiRules || '';
         var sys = AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content;
-        var usedMine = /我自己加的一条/.test(sys);
-        // 恢复预设
-        App.openModelSettings();
-        document.getElementById('cfgDeaiReset').click();
-        var back = document.getElementById('cfgDeaiRules').value;
-        document.getElementById('sheet').querySelector('.sheet__head [data-close]').click();
-        // 关掉总开关后必须完全不注入
+
+        // 4) 恢复预设
+        App.openRules();
+        document.getElementById('rlReset').click();
+        var back = document.getElementById('rlText').value;
+        App.closeSheet();
+
+        // 5) 关掉总开关后完全不注入
         Store.config.set({ deai: false });
         var sys2 = AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content;
         var off = !/写作铁律/.test(sys2);
+
+        // 6) 模型设置页不该再有第二份编辑框（避免两处都能改）
+        App.openModelSettings();
+        var dup = !!document.getElementById('cfgDeaiRules');
+        App.closeSheet();
+
         Store.config.set({ deai: true, deaiRules: '' });
         return {
+          一级入口可见: entryVisible,
+          入口文字: entryText.slice(0, 40),
+          点开直接到编辑页: landed,
           预设行数: lines,
           预设是完整铁律: /不是……而是……/.test(preset),
-          改了就生效: usedMine,
+          改了就生效: /我自己加的一条/.test(sys),
           能一键恢复: back.indexOf('我自己加的一条') < 0 && back.length > 80,
-          关掉后不注入: off
+          关掉后不注入: off,
+          模型页没有重复入口: !dup
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
