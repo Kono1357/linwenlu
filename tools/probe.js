@@ -545,6 +545,25 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
+    // ㉒ 一键排版：接缝处的四类毛病都要修掉
+    report.steps.push({
+      step: 'tidy', check: await cdp.eval(`(function(){
+      try {
+        var messy = '他站在码头。\\n风很大。\\n\\n\\n他站在码头。风很大。\\n\\n「你来晚了。」老陈说...\\n\\n"我知道了"他说。';
+        var out = Format.tidy(messy);
+        var dupBefore = Format.findDupes(messy).length;
+        var stat = Format.diffSummary(messy, out);
+        return {
+          段数变化: stat.beforeParas + '→' + stat.afterParas,
+          重复被认出: dupBefore,
+          省略号统一: /……/.test(out) && !/\\.\\.\\./.test(out),
+          引号统一: out.indexOf('「我知道了」') >= 0,
+          整理入口在: !!document.getElementById('btnTidy'),
+          AI顺稿可用: typeof AI.buildSmoothMessages === 'function'
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {

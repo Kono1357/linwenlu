@@ -234,6 +234,113 @@ const ReadView = (() => {
     });
   }
 
+  /* ── 整理本章 ──
+     分几次续接出来的正文，接缝处会有：多余空行、重复句子、标点混用、段内硬换行。
+     第一层本地排版（免费即时），第二层让 AI 通读修接缝。 */
+  function openTidy() {
+    const c = Store.chapter.active();
+    if (!c) return App.toast('先选一章');
+    const d = Store.chapter.currentDraft(c);
+    const raw = d ? d.text : '';
+    if (!raw.trim()) return App.toast('这一章还是空的');
+
+    const preview = Format.tidy(raw);
+    const st = Format.diffSummary(raw, preview);
+    const dupes = Format.findDupes(raw);
+
+    App.sheet('整理本章 · ' + c.title, `
+      <div class="tidystat">
+        <span>现在 ${st.beforeParas} 段 · ${st.beforeChars} 字</span>
+        ${dupes.length ? `<span class="tidystat__warn">疑似重复 ${dupes.length} 处</span>` : '<span class="tidystat__ok">没发现重复段</span>'}
+      </div>
+
+      <button class="btn" id="tdLocal" style="margin-top:14px">一键排版（本地 · 免费）</button>
+      <div class="field__hint" style="margin-top:8px">
+        统一标点（... → ……、英文引号 → 「」）、合并被硬换行切碎的段、去掉重复段落。
+        <b>不改一个字的意思。</b>
+      </div>
+
+      <div class="sec-title">再进一步</div>
+      <button class="btn btn--ghost" id="tdAI">让 AI 顺一遍衔接</button>
+      <div class="field__hint" style="margin-top:8px">
+        通读全章，修接缝、去重复、补上场景之间缺的一两句过渡；
+        <b>不改情节、不增删事件</b>。需要配置模型。
+      </div>
+      ${dupes.length ? `
+        <div class="sec-title">疑似重复的地方</div>
+        <div class="quotebox">${dupes.slice(0, 6).map((x) => '· ' + esc(x.text) + '…').join('<br>')}</div>` : ''}
+    `, (r) => {
+      r.querySelector('#tdLocal').onclick = () => showTidyResult(raw, Format.tidy(raw), '本地排版');
+      r.querySelector('#tdAI').onclick = () => runSmooth(raw);
+    });
+  }
+
+  function showTidyResult(before, after, label) {
+    if (before === after) {
+      App.toast('已经很整齐了，没什么可改');
+      return;
+    }
+    const st = Format.diffSummary(before, after);
+    App.sheet(label + ' · 结果', `
+      <div class="tidystat">
+        <span>${st.beforeParas} 段 → ${st.afterParas} 段</span>
+        <span>${st.beforeChars} 字 → ${st.afterChars} 字</span>
+        ${st.merged ? `<span class="tidystat__ok">合并/去掉 ${st.merged} 段</span>` : ''}
+      </div>
+      <div class="field__label" style="margin-top:16px">预览</div>
+      <div class="tidyview">${esc(after.slice(0, 700))}${after.length > 700 ? '\n…' : ''}</div>
+      <button class="btn" id="trNew" style="margin-top:16px">存为新版本（原稿保留）</button>
+      <button class="btn btn--ghost" id="trOver" style="margin-top:8px">覆盖当前稿</button>
+      <button class="btn btn--ghost" id="trBack" style="margin-top:8px">返回</button>
+    `, (r) => {
+      const c = Store.chapter.active();
+      r.querySelector('#trNew').onclick = () => {
+        Store.chapter.newDraft(c.id, after, label);
+        App.closeSheet(); refresh(); App.toast('已存为新版本');
+      };
+      r.querySelector('#trOver').onclick = () => {
+        Store.chapter.setDraftText(c.id, after);
+        App.closeSheet(); refresh(); App.toast('已覆盖当前稿');
+      };
+      r.querySelector('#trBack').onclick = () => openTidy();
+    });
+  }
+
+  async function runSmooth(raw) {
+    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
+    let keep = false;
+    App.sheet('AI 正在顺这一章', `
+      <div class="field__hint">通读全文，修接缝、去重复、补过渡。<b>不改情节。</b></div>
+      <div class="tidyview" id="aiOut" style="margin-top:12px"></div>
+      <button class="btn btn--ghost" id="aiStop" style="margin-top:12px">停止</button>
+      <div class="field__hint" style="margin-top:10px">生成完会给你预览，再决定要不要用。</div>
+    `, (r) => {
+      const out = r.querySelector('#aiOut');
+      let acc = '';
+      const ac = new AbortController();
+      r.querySelector('#aiStop').onclick = () => { keep = true; ac.abort(); };
+
+      AI.generate({
+        messages: AI.buildSmoothMessages(raw),
+        signal: ac.signal,
+        onDelta: (p) => { acc += p; out.textContent = acc; out.scrollTop = out.scrollHeight; },
+      }).then((full) => {
+        if (keep) return;
+        const txt = (full || acc).trim();
+        if (!txt) return App.toast('没有返回内容');
+        showTidyResult(raw, txt, 'AI 顺稿');
+      }).catch((e) => {
+        if (e && e.name === 'AbortError') {
+          const txt = acc.trim();
+          if (txt) showTidyResult(raw, txt, 'AI 顺稿（中断）');
+          else App.toast('已停止');
+          return;
+        }
+        App.toast(String(e && e.message || e), 3400);
+      });
+    });
+  }
+
   /* ── 编辑正文 ── */
   function openEditor() {
     const c = Store.chapter.active();
@@ -304,6 +411,7 @@ const ReadView = (() => {
       App.toast('已新建 ' + c.title);
     };
     root.querySelector('#btnVersions').onclick = openVersions;
+    root.querySelector('#btnTidy').onclick = openTidy;
     root.querySelector('#btnEditChapter').onclick = openEditor;
 
     root.querySelector('#selbar').addEventListener('click', (e) => {
@@ -358,5 +466,5 @@ const ReadView = (() => {
     el.reader.addEventListener('scroll', () => { if (!el.selbar.hidden) clearSelection(); }, { passive: true });
   }
 
-  return { init, refresh, renderList, renderReader, openEditor, openVersions, clearSelection };
+  return { init, refresh, renderList, renderReader, openEditor, openVersions, openTidy, clearSelection };
 })();

@@ -606,6 +606,22 @@ input[type="number"] { font-family: var(--mono); }
   font-family: var(--serif); max-height: 26vh; overflow: auto;
 }
 
+/* 整理本章 */
+.tidystat {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  padding: 10px 0 2px;
+  font-size: 12.5px; color: var(--ink-2); font-family: var(--mono);
+}
+.tidystat__warn { color: var(--gold-2); }
+.tidystat__ok { color: var(--green); }
+.tidyview {
+  padding: 12px 14px; border-radius: var(--r);
+  background: var(--bg); border: 1px solid var(--line);
+  font-family: var(--serif); font-size: 14px; line-height: 1.95;
+  color: var(--ink-2); max-height: 42vh; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+}
+
 /* ─────────── Toast ─────────── */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);

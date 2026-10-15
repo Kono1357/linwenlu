@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-15 23:24 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-15 23:34 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -617,6 +617,22 @@ input[type="number"] { font-family: var(--mono); }
   font-family: var(--serif); max-height: 26vh; overflow: auto;
 }
 
+/* 整理本章 */
+.tidystat {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  padding: 10px 0 2px;
+  font-size: 12.5px; color: var(--ink-2); font-family: var(--mono);
+}
+.tidystat__warn { color: var(--gold-2); }
+.tidystat__ok { color: var(--green); }
+.tidyview {
+  padding: 12px 14px; border-radius: var(--r);
+  background: var(--bg); border: 1px solid var(--line);
+  font-family: var(--serif); font-size: 14px; line-height: 1.95;
+  color: var(--ink-2); max-height: 42vh; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+}
+
 /* ─────────── Toast ─────────── */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
@@ -752,7 +768,7 @@ body.is-stream .reader__head { display: none; }
   .selbar { bottom: 10px; }
 }
 </style>
-<meta name="build" content="2026-10-15 23:24">
+<meta name="build" content="2026-10-15 23:34">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -795,6 +811,7 @@ body.is-stream .reader__head { display: none; }
         <div class="reader__title" id="readerTitle">选择一章开始</div>
         <div class="reader__tools">
           <button class="mini-btn" id="btnVersions" title="版本">稿 <span id="verBadge">—</span></button>
+          <button class="mini-btn" id="btnTidy" title="整理本章排版">✦ 整理</button>
           <button class="mini-btn" id="btnEditChapter" title="改写正文">✎</button>
         </div>
       </div>
@@ -1356,6 +1373,115 @@ const Store = (() => {
   };
 })();
 
+/* ─── js/format.js ─── */
+/* ════════════════════════════════════════════
+   临文录 · 排版整理
+   分几次续接出来的正文，接缝处常见四类毛病：
+     ① 标点不统一（... 与 ……、英文引号与「」混用）
+     ② 段落没分开，或者空行忽多忽少
+     ③ 同一段被写了两遍（续接时重发了上文）
+     ④ 段内被硬换行切碎
+   这里全部本地处理，不调用模型，立刻见效。
+   ════════════════════════════════════════════ */
+
+const Format = (() => {
+  const PUNCT = /[\s，。！？；：、""''「」『』（）—－…·\n]/g;
+
+  /** 去标点去空白，用来判断两段是不是在说同一件事 */
+  function bare(s) {
+    return String(s || '').replace(PUNCT, '');
+  }
+
+  /** 重复判定：完全同 / 短的被长的包住 / 首尾大段重叠
+      这里的核心场景就是「续接时把上文重发了一遍」——
+      上一段和这一段的开头重复，所以要认前缀包含，而不只是全等。 */
+  function similar(a, b) {
+    const na = bare(a), nb = bare(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    const s = na.length <= nb.length ? na : nb;
+    const l = na.length <= nb.length ? nb : na;
+    // 短的整个出现在长的里
+    if (s.length >= 6 && l.includes(s)) return true;
+    // 首尾重叠八成以上
+    const k = Math.floor(s.length * 0.8);
+    if (k >= 6 && (l.startsWith(s.slice(0, k)) || l.endsWith(s.slice(-k)))) return true;
+    return false;
+  }
+
+  /** 统一标点 */
+  function tidyPunct(t) {
+    return t
+      .replace(/\.{3,}/g, '……')
+      .replace(/…{3,}/g, '……')
+      .replace(/(?<!—)-{2,}(?!—)/g, '——')
+      .replace(/~{2,}/g, '——')
+      .replace(/"([^"\n]{1,120})"/g, '「$1」')
+      .replace(/'([^'\n]{1,60})'/g, '「$1」')
+      .replace(/[ \t]+([，。！？；：、）】」』…—])/g, '$1')
+      .replace(/([（【「『])[ \t]+/g, '$1')
+      .replace(/[ \t]{2,}/g, ' ');
+  }
+
+  /** 主入口：返回整理后的全文 */
+  function tidy(text) {
+    let t = String(text || '').replace(/\r\n?/g, '\n');
+    t = tidyPunct(t);
+
+    let paras = t.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+
+    // 整篇没有空行（一次生成的常见形态）→ 按行切
+    if (paras.length <= 1 && t.includes('\n')) {
+      paras = t.split('\n').map((p) => p.trim()).filter(Boolean);
+    }
+
+    const out = [];
+    const seen = new Set();
+    for (let p of paras) {
+      // 段内硬换行合并回一段，多余空格压掉
+      p = p.replace(/\s*\n\s*/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+      if (!p) continue;
+      const key = bare(p);
+      if (key.length >= 6 && seen.has(key)) continue;                 // 全文重复
+      if (out.length && similar(out[out.length - 1], p)) continue;    // 与上一段重复
+      seen.add(key);
+      out.push(p);
+    }
+
+    return out.join('\n\n');
+  }
+
+  /** 给用户看的改动摘要 */
+  function diffSummary(before, after) {
+    const cnt = (s) => String(s || '').split(/\n\s*\n/).filter((x) => x.trim()).length;
+    const ch = (s) => String(s || '').replace(/\s/g, '').length;
+    const b = cnt(before), a = cnt(after);
+    return {
+      beforeParas: b, afterParas: a,
+      merged: Math.max(0, b - a),
+      beforeChars: ch(before), afterChars: ch(after),
+      changed: before !== after,
+    };
+  }
+
+  /** 找出最像「重复」的那些段，给用户看一眼 */
+  function findDupes(text) {
+    const paras = String(text || '').split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const hits = [];
+    for (let i = 0; i < paras.length; i++) {
+      for (let j = i + 1; j < paras.length; j++) {
+        if (similar(paras[i], paras[j])) {
+          hits.push({ i, j, text: paras[j].slice(0, 40) });
+          break;
+        }
+      }
+    }
+    return hits;
+  }
+
+  return { tidy, tidyPunct, similar, bare, diffSummary, findDupes };
+})();
+
 /* ─── js/api.js ─── */
 /* ════════════════════════════════════════════
    临文录 · AI 层
@@ -1514,6 +1640,27 @@ const AI = (() => {
     return [{ role: 'system', content: sys }, ...history, { role: 'user', content: userParts.join('\n\n') }];
   }
 
+  /* ── 整章顺稿：不做上下文装配，直接把全文交给模型修接缝 ── */
+  function buildSmoothMessages(text) {
+    const st = Store.get();
+    const sys = [
+      '你是一位长篇小说编辑。作者这一章是分几次写成的，接缝处可能有重复、跳跃、语气断裂。',
+      '请通读全文，做**最小必要**的修改，让它读起来像一次写完的：',
+      '· 删掉重复的句子与意思相近的段落（续接时重发上文是常见毛病）',
+      '· 补上场景之间缺失的过渡，一两句即可，不要展开',
+      '· 统一人物称呼、叙述人称与语气',
+      '· 保留原有的分段节奏与文风，不要润色、不要拔高、不要加形容词',
+      '· **不要改动情节，不要增删事件，不要改变任何人的行为**',
+      st.config.style ? `· 本书文风：${st.config.style}` : '',
+      '直接输出修改后的全文，不要任何解释、不要小标题、不要用 markdown 标记。',
+    ].filter(Boolean).join('\n');
+
+    return [
+      { role: 'system', content: sys },
+      { role: 'user', content: `【本章全文】\n${String(text || '').trim()}\n\n请输出修改后的全文。` },
+    ];
+  }
+
   /* ── 只生成提示词（降级用） ── */
   function buildPromptOnly(opts) {
     return buildMessages(opts).map((m) => {
@@ -1533,7 +1680,7 @@ const AI = (() => {
     const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
     const body = {
       model: cfg.model,
-      messages: buildMessages(opts),
+      messages: opts.messages || buildMessages(opts),
       stream: true,
       temperature: Number(cfg.temperature) || 0.9,
     };
@@ -1682,7 +1829,10 @@ const AI = (() => {
     return extractNames(text, known);
   }
 
-  return { buildContext, buildMessages, buildPromptOnly, generate, probe, cut, extractNames, findNewNames };
+  return {
+    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages,
+    generate, probe, cut, extractNames, findNewNames,
+  };
 })();
 
 /* ─── js/read.js ─── */
@@ -1922,6 +2072,113 @@ const ReadView = (() => {
     });
   }
 
+  /* ── 整理本章 ──
+     分几次续接出来的正文，接缝处会有：多余空行、重复句子、标点混用、段内硬换行。
+     第一层本地排版（免费即时），第二层让 AI 通读修接缝。 */
+  function openTidy() {
+    const c = Store.chapter.active();
+    if (!c) return App.toast('先选一章');
+    const d = Store.chapter.currentDraft(c);
+    const raw = d ? d.text : '';
+    if (!raw.trim()) return App.toast('这一章还是空的');
+
+    const preview = Format.tidy(raw);
+    const st = Format.diffSummary(raw, preview);
+    const dupes = Format.findDupes(raw);
+
+    App.sheet('整理本章 · ' + c.title, `
+      <div class="tidystat">
+        <span>现在 ${st.beforeParas} 段 · ${st.beforeChars} 字</span>
+        ${dupes.length ? `<span class="tidystat__warn">疑似重复 ${dupes.length} 处</span>` : '<span class="tidystat__ok">没发现重复段</span>'}
+      </div>
+
+      <button class="btn" id="tdLocal" style="margin-top:14px">一键排版（本地 · 免费）</button>
+      <div class="field__hint" style="margin-top:8px">
+        统一标点（... → ……、英文引号 → 「」）、合并被硬换行切碎的段、去掉重复段落。
+        <b>不改一个字的意思。</b>
+      </div>
+
+      <div class="sec-title">再进一步</div>
+      <button class="btn btn--ghost" id="tdAI">让 AI 顺一遍衔接</button>
+      <div class="field__hint" style="margin-top:8px">
+        通读全章，修接缝、去重复、补上场景之间缺的一两句过渡；
+        <b>不改情节、不增删事件</b>。需要配置模型。
+      </div>
+      ${dupes.length ? `
+        <div class="sec-title">疑似重复的地方</div>
+        <div class="quotebox">${dupes.slice(0, 6).map((x) => '· ' + esc(x.text) + '…').join('<br>')}</div>` : ''}
+    `, (r) => {
+      r.querySelector('#tdLocal').onclick = () => showTidyResult(raw, Format.tidy(raw), '本地排版');
+      r.querySelector('#tdAI').onclick = () => runSmooth(raw);
+    });
+  }
+
+  function showTidyResult(before, after, label) {
+    if (before === after) {
+      App.toast('已经很整齐了，没什么可改');
+      return;
+    }
+    const st = Format.diffSummary(before, after);
+    App.sheet(label + ' · 结果', `
+      <div class="tidystat">
+        <span>${st.beforeParas} 段 → ${st.afterParas} 段</span>
+        <span>${st.beforeChars} 字 → ${st.afterChars} 字</span>
+        ${st.merged ? `<span class="tidystat__ok">合并/去掉 ${st.merged} 段</span>` : ''}
+      </div>
+      <div class="field__label" style="margin-top:16px">预览</div>
+      <div class="tidyview">${esc(after.slice(0, 700))}${after.length > 700 ? '\n…' : ''}</div>
+      <button class="btn" id="trNew" style="margin-top:16px">存为新版本（原稿保留）</button>
+      <button class="btn btn--ghost" id="trOver" style="margin-top:8px">覆盖当前稿</button>
+      <button class="btn btn--ghost" id="trBack" style="margin-top:8px">返回</button>
+    `, (r) => {
+      const c = Store.chapter.active();
+      r.querySelector('#trNew').onclick = () => {
+        Store.chapter.newDraft(c.id, after, label);
+        App.closeSheet(); refresh(); App.toast('已存为新版本');
+      };
+      r.querySelector('#trOver').onclick = () => {
+        Store.chapter.setDraftText(c.id, after);
+        App.closeSheet(); refresh(); App.toast('已覆盖当前稿');
+      };
+      r.querySelector('#trBack').onclick = () => openTidy();
+    });
+  }
+
+  async function runSmooth(raw) {
+    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
+    let keep = false;
+    App.sheet('AI 正在顺这一章', `
+      <div class="field__hint">通读全文，修接缝、去重复、补过渡。<b>不改情节。</b></div>
+      <div class="tidyview" id="aiOut" style="margin-top:12px"></div>
+      <button class="btn btn--ghost" id="aiStop" style="margin-top:12px">停止</button>
+      <div class="field__hint" style="margin-top:10px">生成完会给你预览，再决定要不要用。</div>
+    `, (r) => {
+      const out = r.querySelector('#aiOut');
+      let acc = '';
+      const ac = new AbortController();
+      r.querySelector('#aiStop').onclick = () => { keep = true; ac.abort(); };
+
+      AI.generate({
+        messages: AI.buildSmoothMessages(raw),
+        signal: ac.signal,
+        onDelta: (p) => { acc += p; out.textContent = acc; out.scrollTop = out.scrollHeight; },
+      }).then((full) => {
+        if (keep) return;
+        const txt = (full || acc).trim();
+        if (!txt) return App.toast('没有返回内容');
+        showTidyResult(raw, txt, 'AI 顺稿');
+      }).catch((e) => {
+        if (e && e.name === 'AbortError') {
+          const txt = acc.trim();
+          if (txt) showTidyResult(raw, txt, 'AI 顺稿（中断）');
+          else App.toast('已停止');
+          return;
+        }
+        App.toast(String(e && e.message || e), 3400);
+      });
+    });
+  }
+
   /* ── 编辑正文 ── */
   function openEditor() {
     const c = Store.chapter.active();
@@ -1992,6 +2249,7 @@ const ReadView = (() => {
       App.toast('已新建 ' + c.title);
     };
     root.querySelector('#btnVersions').onclick = openVersions;
+    root.querySelector('#btnTidy').onclick = openTidy;
     root.querySelector('#btnEditChapter').onclick = openEditor;
 
     root.querySelector('#selbar').addEventListener('click', (e) => {
@@ -2046,7 +2304,7 @@ const ReadView = (() => {
     el.reader.addEventListener('scroll', () => { if (!el.selbar.hidden) clearSelection(); }, { passive: true });
   }
 
-  return { init, refresh, renderList, renderReader, openEditor, openVersions, clearSelection };
+  return { init, refresh, renderList, renderReader, openEditor, openVersions, openTidy, clearSelection };
 })();
 
 /* ─── js/chat.js ─── */

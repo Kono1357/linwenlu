@@ -155,6 +155,27 @@ const AI = (() => {
     return [{ role: 'system', content: sys }, ...history, { role: 'user', content: userParts.join('\n\n') }];
   }
 
+  /* ── 整章顺稿：不做上下文装配，直接把全文交给模型修接缝 ── */
+  function buildSmoothMessages(text) {
+    const st = Store.get();
+    const sys = [
+      '你是一位长篇小说编辑。作者这一章是分几次写成的，接缝处可能有重复、跳跃、语气断裂。',
+      '请通读全文，做**最小必要**的修改，让它读起来像一次写完的：',
+      '· 删掉重复的句子与意思相近的段落（续接时重发上文是常见毛病）',
+      '· 补上场景之间缺失的过渡，一两句即可，不要展开',
+      '· 统一人物称呼、叙述人称与语气',
+      '· 保留原有的分段节奏与文风，不要润色、不要拔高、不要加形容词',
+      '· **不要改动情节，不要增删事件，不要改变任何人的行为**',
+      st.config.style ? `· 本书文风：${st.config.style}` : '',
+      '直接输出修改后的全文，不要任何解释、不要小标题、不要用 markdown 标记。',
+    ].filter(Boolean).join('\n');
+
+    return [
+      { role: 'system', content: sys },
+      { role: 'user', content: `【本章全文】\n${String(text || '').trim()}\n\n请输出修改后的全文。` },
+    ];
+  }
+
   /* ── 只生成提示词（降级用） ── */
   function buildPromptOnly(opts) {
     return buildMessages(opts).map((m) => {
@@ -174,7 +195,7 @@ const AI = (() => {
     const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
     const body = {
       model: cfg.model,
-      messages: buildMessages(opts),
+      messages: opts.messages || buildMessages(opts),
       stream: true,
       temperature: Number(cfg.temperature) || 0.9,
     };
@@ -323,5 +344,8 @@ const AI = (() => {
     return extractNames(text, known);
   }
 
-  return { buildContext, buildMessages, buildPromptOnly, generate, probe, cut, extractNames, findNewNames };
+  return {
+    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages,
+    generate, probe, cut, extractNames, findNewNames,
+  };
 })();
