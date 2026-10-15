@@ -90,6 +90,17 @@ const App = (() => {
         <label class="field__label">文风约束</label>
         <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
       </div>
+      <div class="sec-title">外观</div>
+      <label class="pickrow">
+        <input type="radio" name="theme" value="light" ${Store.get().config.theme === 'dark' ? '' : 'checked'}>
+        <span class="pickrow__k">纸感（浅色）</span>
+        <span class="pickrow__n" style="font-size:11px">默认</span>
+      </label>
+      <label class="pickrow">
+        <input type="radio" name="theme" value="dark" ${Store.get().config.theme === 'dark' ? 'checked' : ''}>
+        <span class="pickrow__k">夜色（深色）</span>
+      </label>
+
       <div class="sec-title">每次写多少</div>
       <div class="field">
         <label class="field__label">目标字数（0 = 不要求）</label>
@@ -129,6 +140,7 @@ const App = (() => {
 
       g('#cfgSave').onclick = () => {
         const cm = r.querySelector('input[name="cmode"]:checked');
+        const th = r.querySelector('input[name="theme"]:checked');
         Store.config.set({
           apiBase: g('#cfgBase').value.trim() || 'https://api.deepseek.com/v1',
           apiKey: g('#cfgKey').value.trim(),
@@ -139,7 +151,9 @@ const App = (() => {
           ctxTail: Number(g('#cfgTail').value) || 0,
           commitMode: cm ? cm.value : 'ask',
           targetWords: Number(g('#cfgWords').value) || 0,
+          theme: th ? th.value : 'light',
         });
+        applyTheme();
         closeSheet(); ChatView.hint(); toast('已保存');
       };
       g('#cfgTest').onclick = async () => {
@@ -357,6 +371,14 @@ const App = (() => {
     return count;
   }
 
+  /* ── 外观：默认纸感浅色，深色只是可选项 ── */
+  function applyTheme() {
+    const t = (Store.get().config.theme) || 'light';
+    document.body.classList.toggle('theme-dark', t === 'dark');
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = t === 'dark' ? '#17150f' : '#f6f3ee';
+  }
+
   /* ── 顶栏渲染 ── */
   function renderTop() {
     const st = Store.get();
@@ -531,6 +553,7 @@ const App = (() => {
     };
 
     Store.load();
+    applyTheme();
 
     ReadView.init(el.viewRead);
     ChatView.init(el.viewChat);

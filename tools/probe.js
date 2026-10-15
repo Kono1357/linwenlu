@@ -226,7 +226,9 @@ class CDP {
       return {
         panelLeft: Math.round(r.left), panelW: Math.round(r.width),
         vw: vw, fillsViewport: r.width >= vw - 2,
-        rangeStyled: !!getComputedStyle(document.documentElement).getPropertyValue('--gold').trim(),
+        主题: document.body.classList.contains('theme-dark') ? '深色' : '浅色',
+        主色: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+        页面底色: getComputedStyle(document.body).backgroundColor,
         overflowX: document.documentElement.scrollWidth > vw + 2
       };
     })()`) });
@@ -620,6 +622,34 @@ class CDP {
           设了基线: /接着写/.test(before),
           换章后自动作废: !/接着写/.test(after),
           换章后看不到旧内容: !/第一章里的一段/.test(document.getElementById('chatFlow').textContent)
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉕ 外观：默认浅色，深色可切
+    report.steps.push({
+      step: 'theme', check: await cdp.eval(`(function(){
+      try {
+        var root = document.documentElement;
+        var lightBg = getComputedStyle(document.body).backgroundColor;
+        var lightAccent = getComputedStyle(root).getPropertyValue('--accent').trim();
+        document.body.classList.add('theme-dark');
+        var darkBg = getComputedStyle(document.body).backgroundColor;
+        var darkAccent = getComputedStyle(root).getPropertyValue('--accent').trim();
+        document.body.classList.remove('theme-dark');
+        var paper = getComputedStyle(root).getPropertyValue('--paper').trim();
+        var bodyFont = getComputedStyle(document.body).fontFamily;
+        var readerIndent = document.querySelector('#reader p')
+          ? getComputedStyle(document.querySelector('#reader p')).textIndent : null;
+        return {
+          默认浅色: lightBg === 'rgb(246, 243, 238)',
+          浅色底: lightBg,
+          浅色主色: lightAccent,
+          深色底: darkBg,
+          深色主色: darkAccent,
+          深浅确实不同: lightBg !== darkBg && lightAccent !== darkAccent,
+          正文纸面: paper,
+          正文首行缩进: readerIndent
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });

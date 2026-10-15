@@ -38,6 +38,7 @@ const Store = (() => {
         commitMode: 'ask',      // ask（每次问）| auto（自动续接）
         lastCommit: 'append',   // 上次选的写入方式，下次排在第一位
         targetWords: 800,       // 每次生成的目标字数（0 = 不要求）
+        theme: 'light',         // light（纸感）| dark（夜色）
       },
     };
   }

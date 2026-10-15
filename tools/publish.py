@@ -44,7 +44,7 @@ def collect():
     return sorted(out)
 
 
-def api(method, path, tok, body=None, retries=5, ok=(200, 201, 204)):
+def api(method, path, tok, body=None, retries=8, ok=(200, 201, 204)):
     url = path if path.startswith('http') else 'https://api.github.com' + path
     data = json.dumps(body).encode('utf-8') if body is not None else None
     last = ''
@@ -57,7 +57,7 @@ def api(method, path, tok, body=None, retries=5, ok=(200, 201, 204)):
         if data:
             req.add_header('Content-Type', 'application/json')
         try:
-            with urllib.request.urlopen(req, timeout=180) as r:
+            with urllib.request.urlopen(req, timeout=300) as r:
                 raw = r.read().decode('utf-8', 'replace')
                 return r.status, (json.loads(raw) if raw.strip() else {}), dict(r.headers)
         except urllib.error.HTTPError as e:
@@ -72,8 +72,9 @@ def api(method, path, tok, body=None, retries=5, ok=(200, 201, 204)):
                 time.sleep(2 + attempt * 2)
                 continue
             return e.code, {'error': raw[:400]}, dict(e.headers)
-        except Exception as e:                      # 网络层抖动，退避重试
+        except Exception as e:                      # 网络层抖动（含 SSL 读超时），退避重试
             last = str(e)
+            print('  … 网络抖动，重试 %d/%d：%s' % (attempt + 1, retries, str(e)[:70]))
             time.sleep(2 + attempt * 2)
     return 0, {'error': last}, {}
 
