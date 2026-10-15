@@ -200,6 +200,16 @@ const ChatView = (() => {
     const lenTag = (m.role === 'ai')
       ? `<span class="msg__len ${short ? 'is-short' : ''}">${len} 字${short ? ` · 差 ${tw - len}` : ''}</span>`
       : '';
+
+    // AI 味：每条生成就地体检一次
+    let flavorTag = '';
+    if (m.role === 'ai') {
+      const f = AiFlavor.scan(m.text);
+      if (f.hits.length) {
+        flavorTag = `<button class="msg__ai ${f.level === 'heavy' ? 'is-heavy' : ''}" data-flavor="${m.id}">${AiFlavor.label(f)}</button>`;
+      }
+    }
+
     const isBase = replyTo && replyTo.id === m.id;
     const acts = (m.role === 'ai') ? `
       <div class="msg__acts" data-acts="${m.id}">
@@ -211,13 +221,96 @@ const ChatView = (() => {
         ${m.clipped ? '' : '<button class="mini-btn" data-act="setting">存为设定</button>'}
       </div>` : '';
     return `<div class="msg ${cls}" data-msg="${m.id}">
-      <div class="msg__who">${who}${lenTag}</div>
+      <div class="msg__who">${who}${lenTag}${flavorTag}</div>
       <div class="msg__body">${hl(m.text)}</div>
       ${acts}
     </div>`;
   }
 
+  /* ── AI 味详情 + 一键重写 ── */
+  function openFlavor(id) {
+    const m = Store.chat.all().find((x) => x.id === id);
+    if (!m) return;
+    const res = AiFlavor.scan(m.text);
+    if (!res.hits.length) return App.toast('这一段挺干净的');
+
+    App.sheet('AI 味体检', `
+      <div class="tidystat">
+        <span>${res.len} 字</span>
+        <span class="${res.level === 'heavy' ? 'tidystat__warn' : ''}">密度 ${res.per1k} 分/千字</span>
+        <span class="${res.level === 'clean' ? 'tidystat__ok' : 'tidystat__warn'}">${res.level === 'heavy' ? '偏重' : (res.level === 'some' ? '有一些' : '干净')}</span>
+      </div>
+      ${res.hits.map((h) => `
+        <div class="flavorhit">
+          <div class="flavorhit__hd">
+            <span class="flavorhit__n">${esc(h.name)}</span>
+            <span class="flavorhit__c">${h.count} 处${h.allow ? ` / 建议 ≤ ${h.allow}` : ''}</span>
+          </div>
+          <div class="flavorhit__why">${esc(h.why)}</div>
+          <div class="flavorhit__s">${h.samples.map((s) => '「' + esc(s) + '」').join(' ')}</div>
+          <div class="flavorhit__fix">→ ${esc(h.fix)}</div>
+        </div>`).join('')}
+      <button class="btn" id="fvRewrite" style="margin-top:16px">让 AI 按这些改一遍</button>
+      <div class="field__hint" style="margin-top:8px">只改这些痕迹，情节与信息量一个字不动。</div>
+    `, (r) => {
+      r.querySelector('#fvRewrite').onclick = () => runDeai(m, res);
+    });
+  }
+
+  async function runDeai(m, res) {
+    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
+    let keep = false;
+    App.sheet('正在去 AI 味', `
+      <div class="field__hint">只改机器痕迹，情节与信息量不动。</div>
+      <div class="tidyview" id="dvOut" style="margin-top:12px;min-height:140px"></div>
+      <button class="btn btn--ghost" id="dvStop" style="margin-top:12px">停止</button>
+    `, (r) => {
+      const out = r.querySelector('#dvOut');
+      let acc = '';
+      const ac = new AbortController();
+      r.querySelector('#dvStop').onclick = () => { keep = true; ac.abort(); };
+      AI.generate({
+        messages: AI.buildDeaiMessages(m.text, res.hits),
+        signal: ac.signal,
+        onDelta: (p) => { acc += p; out.textContent = acc; out.scrollTop = out.scrollHeight; },
+      }).then((full) => {
+        if (keep) return;
+        const txt = (full || acc).trim();
+        if (!txt) return App.toast('没有返回内容');
+        const after = AiFlavor.scan(txt);
+        App.sheet('改完了', `
+          <div class="tidystat">
+            <span>${res.hits.length} 类 → ${after.hits.length} 类</span>
+            <span>密度 ${res.per1k} → ${after.per1k}</span>
+          </div>
+          <div class="field__label" style="margin-top:14px">预览</div>
+          <div class="tidyview">${esc(txt.slice(0, 700))}${txt.length > 700 ? '\n…' : ''}</div>
+          <button class="btn" id="dvNew" style="margin-top:16px">改后的作为新一段</button>
+          <button class="btn btn--ghost" id="dvReplace" style="margin-top:8px">替换这一段</button>
+          <button class="btn btn--ghost" id="dvBack" style="margin-top:8px">不要</button>
+        `, (r2) => {
+          r2.querySelector('#dvNew').onclick = () => {
+            Store.chat.push('ai', txt, { chapterId: m.chapterId });
+            App.closeSheet(); renderFlow(); App.toast('已作为新一段');
+          };
+          r2.querySelector('#dvReplace').onclick = () => {
+            m.text = txt;
+            Store.save();
+            App.closeSheet(); renderFlow(); App.toast('已替换');
+          };
+          r2.querySelector('#dvBack').onclick = () => { App.closeSheet(); openFlavor(m.id); };
+        });
+      }).catch((e) => {
+        if (e && e.name === 'AbortError') return App.toast('已停止');
+        App.toast(String(e && e.message || e), 3400);
+      });
+    });
+  }
+
   function bindActs() {
+    el.flow.querySelectorAll('[data-flavor]').forEach((b) => {
+      b.onclick = () => openFlavor(b.dataset.flavor);
+    });
     el.flow.querySelectorAll('[data-acts]').forEach((box) => {
       const id = box.dataset.acts;
       box.querySelectorAll('[data-act]').forEach((b) => {

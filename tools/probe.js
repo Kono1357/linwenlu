@@ -756,6 +756,35 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
+    // ㉚ AI 味检测：机器痕迹要抓得住，正常人话别误伤
+    report.steps.push({
+      step: 'aiflavor', check: await cdp.eval(`(function(){
+      try {
+        var dirty = '他不是不想说话，而是不知道说什么。首先，这里很安静。其次，风很大。'
+          + '当夜色降临的时候，他终于开口。他的语气里带着一丝疲惫。他不禁思考这一切的意义。'
+          + '轻得像羽毛的叹息。好像有什么东西变了。仿佛一切都不同了。如同昨日。'
+          + '她微微挑眉，光芒闪过。他认真地摩挲着手里的东西。';
+        var clean = '老陈把烟头摁在栏杆上，火星溅了一下就灭了。\\n\\n'
+          + '「来晚了。」他说。\\n\\n'
+          + '她没接话，把手插进外套口袋，站着没动。风从码头那边过来，带着铁锈味。';
+
+        var d = AiFlavor.scan(dirty);
+        var c = AiFlavor.scan(clean);
+        // 生成提示词里必须带着铁律
+        var p = AI.buildMessages({ ask: '继续写', chapterId: null, mode: 'continue' });
+        var sys = p[0].content;
+        return {
+          脏文本_判定: d.level,
+          脏文本_命中类别数: d.hits.length,
+          抓到: d.hits.map(function(h){ return h.name; }).join('、'),
+          干净文本_判定: c.level,
+          干净文本_误报数: c.hits.length,
+          铁律进了提示词: /不是……而是……/.test(sys),
+          消息上有标记: !!document.querySelector('[data-flavor]') || '（当前没有生成内容，跳过）'
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {

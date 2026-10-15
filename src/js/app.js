@@ -90,6 +90,21 @@ const App = (() => {
         <label class="field__label">文风约束</label>
         <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
       </div>
+      <div class="sec-title">去 AI 味</div>
+      <label class="pickrow">
+        <input type="checkbox" id="cfgDeai" ${c.deai === false ? '' : 'checked'}>
+        <span class="pickrow__k">每次生成都注入「去 AI 味铁律」</span>
+      </label>
+      <div class="field">
+        <label class="field__label">自己再补几条禁令（可选）</label>
+        <textarea class="textarea" id="cfgDeaiRules" style="min-height:80px"
+          placeholder="一行一条，例如：&#10;不许用「值得注意」&#10;对话不许超过三句连着说">${esc(c.deaiRules || '')}</textarea>
+        <div class="field__hint">
+          内置的铁律见下方；你补的会拼在后面。<br>
+          <span style="opacity:.75">禁用「不是…而是…」／学术腔／三段论／「当…时」／给语气打标签／无中生有内心戏；明喻全篇≤2 次；克制「认真、光芒、摩挲、挑眉、微微」等词；对话要像真人、角色要有辨识度。</span>
+        </div>
+      </div>
+
       <div class="sec-title">外观</div>
       <label class="pickrow">
         <input type="radio" name="theme" value="light" ${Store.get().config.theme === 'dark' ? '' : 'checked'}>
@@ -152,6 +167,8 @@ const App = (() => {
           commitMode: cm ? cm.value : 'ask',
           targetWords: Number(g('#cfgWords').value) || 0,
           theme: th ? th.value : 'light',
+          deai: g('#cfgDeai') ? g('#cfgDeai').checked : true,
+          deaiRules: g('#cfgDeaiRules') ? g('#cfgDeaiRules').value.trim() : '',
         });
         applyTheme();
         closeSheet(); ChatView.hint(); toast('已保存');

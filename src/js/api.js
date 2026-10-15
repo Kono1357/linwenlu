@@ -145,6 +145,8 @@ const AI = (() => {
       '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
       '需要有新角色出场时，先从人物表里挑最合适的那个，表里确实没有才新建，',
       '并且同一个角色前后的称呼必须保持一致，不要用"某个人""一个男人"这类泛称代替已有角色。',
+      (st.config.deai === false) ? '' : DEAI_RULES,
+      st.config.deaiRules ? String(st.config.deaiRules).trim() : '',
       lenRule,
       modeRule,
     ].filter(Boolean).join('\n');
@@ -161,6 +163,45 @@ const AI = (() => {
     })).filter((m, i, a) => !(i === a.length - 1 && m.role === 'assistant' && a[a.length - 1].content === ask));
 
     return [{ role: 'system', content: sys }, ...history, { role: 'user', content: userParts.join('\n\n') }];
+  }
+
+  /* ── 去 AI 味铁律：默认注入每次生成 ── */
+  const DEAI_RULES = [
+    '【写作铁律 · 去 AI 味】逐条遵守：',
+    '· 禁用「不是……而是……」句式（机器最深的肌肉记忆，用来制造假深度）',
+    '· 禁用「综上所述 / 值得注意的是 / 本质上 / 事实上 / 总的来说」这类学术腔',
+    '· 禁用「首先 / 其次 / 此外」的三段论；段落靠意思自然衔接，不用过渡词硬连',
+    '· 禁用「当……的时候 / 与此同时 / 就在这一刻」——这是把画面"报"出来，直接写动作',
+    '· 不给语气打标签（「语气里带着……」「声音里透着……」「用一种……的口吻」），语气靠台词本身',
+    '· 不写无中生有的内心戏（「他不禁思考」「这个念头」「她心想」），用动作和停顿暗示',
+    '· 明喻从严：「好像 / 似的 / 如同 / 仿佛」全篇不超过 2 次',
+    '· 这些词尽量别用：认真、光芒、摩挲、挑眉、不易察觉、勾起嘴角、深吸一口气、微微、一丝',
+    '· 对话像真人说话：允许省略句、语气词、打断；长短句交错，不要一人一句轮着来',
+    '· 每个角色要有辨识度：遮住名字也能看出是谁在说话',
+  ].join('\n');
+
+  /* ── 针对检测结果做一次「去 AI 味」重写 ── */
+  function buildDeaiMessages(text, hits) {
+    const list = (hits || []).map((h) =>
+      `· ${h.name}${h.count ? '（' + h.count + ' 处）' : ''}：${(h.samples || []).slice(0, 4).join(' ／ ')}`
+    ).join('\n');
+
+    const sys = [
+      '你是小说编辑，专治机器味。只做一件事：把下面文本里露出的 AI 痕迹改掉。',
+      '**情节、人物、信息量、段落顺序一个字都不许变**；不要润色、不要扩写、不要删内容、不要重排。',
+      '只输出改完的正文，不要解释、不要标注改了什么。',
+      '',
+      DEAI_RULES,
+    ].join('\n');
+
+    const user = [
+      list ? `这一章检测到这些问题：\n${list}\n` : '',
+      `【原文】\n${String(text || '').trim()}`,
+      '',
+      '请改正后输出全文。',
+    ].filter(Boolean).join('\n');
+
+    return [{ role: 'system', content: sys }, { role: 'user', content: user }];
   }
 
   /* ── 整章顺稿：不做上下文装配，直接把全文交给模型修接缝 ── */
@@ -433,6 +474,7 @@ const AI = (() => {
 
   return {
     buildContext, buildMessages, buildPromptOnly, buildSmoothMessages, buildEnrichMessages,
+    buildDeaiMessages, DEAI_RULES,
     generate, probe, cut, extractNames, findNewNames, quotesFor,
   };
 })();

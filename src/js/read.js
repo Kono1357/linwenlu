@@ -255,11 +255,15 @@ const ReadView = (() => {
     const preview = Format.tidy(raw);
     const st = Format.diffSummary(raw, preview);
     const dupes = Format.findDupes(raw);
+    const flavor = AiFlavor.scan(raw);
 
     App.sheet('整理本章 · ' + c.title, `
       <div class="tidystat">
         <span>现在 ${st.beforeParas} 段 · ${st.beforeChars} 字</span>
         ${dupes.length ? `<span class="tidystat__warn">疑似重复 ${dupes.length} 处</span>` : '<span class="tidystat__ok">没发现重复段</span>'}
+        ${flavor.hits.length
+        ? `<span class="${flavor.level === 'heavy' ? 'tidystat__warn' : ''}">AI 味 ${flavor.hits.length} 类 · ${flavor.per1k} 分/千字</span>`
+        : '<span class="tidystat__ok">AI 味检查干净</span>'}
       </div>
 
       <button class="btn" id="tdLocal" style="margin-top:14px">一键排版（本地 · 免费）</button>
@@ -271,15 +275,64 @@ const ReadView = (() => {
       <div class="sec-title">再进一步</div>
       <button class="btn btn--ghost" id="tdAI">让 AI 顺一遍衔接</button>
       <div class="field__hint" style="margin-top:8px">
-        通读全章，修接缝、去重复、补上场景之间缺的一两句过渡；
-        <b>不改情节、不增删事件</b>。需要配置模型。
+        通读全章，修接缝、去重复、补上场景之间缺的一两句过渡；<b>不改情节、不增删事件</b>。
       </div>
+      <button class="btn btn--ghost" id="tdDeai" style="margin-top:10px">针对 AI 味改一遍</button>
+      <div class="field__hint" style="margin-top:8px">
+        ${flavor.hits.length
+        ? '只改检测出来的机器痕迹，情节与信息量一个字不动。'
+        : '这一次没检出明显的机器痕迹，也可以跑一遍保险。'}
+      </div>
+
+      ${flavor.hits.length ? `
+        <div class="sec-title">AI 味体检</div>
+        ${flavor.hits.map((h) => `
+          <div class="flavorhit">
+            <div class="flavorhit__hd">
+              <span class="flavorhit__n">${esc(h.name)}</span>
+              <span class="flavorhit__c">${h.count} 处${h.allow ? ` / 建议 ≤ ${h.allow}` : ''}</span>
+            </div>
+            <div class="flavorhit__why">${esc(h.why)}</div>
+            <div class="flavorhit__s">${h.samples.map((s) => '「' + esc(s) + '」').join(' ')}</div>
+            <div class="flavorhit__fix">→ ${esc(h.fix)}</div>
+          </div>`).join('')}` : ''}
+
       ${dupes.length ? `
         <div class="sec-title">疑似重复的地方</div>
         <div class="quotebox">${dupes.slice(0, 6).map((x) => '· ' + esc(x.text) + '…').join('<br>')}</div>` : ''}
     `, (r) => {
       r.querySelector('#tdLocal').onclick = () => showTidyResult(raw, Format.tidy(raw), '本地排版');
       r.querySelector('#tdAI').onclick = () => runSmooth(raw);
+      r.querySelector('#tdDeai').onclick = () => runDeaiChapter(raw, flavor.hits);
+    });
+  }
+
+  /* 整章去 AI 味：复用对话里的那套重写流程 */
+  async function runDeaiChapter(raw, hits) {
+    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
+    let keep = false;
+    App.sheet('正在去 AI 味', `
+      <div class="field__hint">只改机器痕迹，情节与信息量不动。</div>
+      <div class="tidyview" id="dcOut" style="margin-top:12px;min-height:140px"></div>
+      <button class="btn btn--ghost" id="dcStop" style="margin-top:12px">停止</button>
+    `, (r) => {
+      const out = r.querySelector('#dcOut');
+      let acc = '';
+      const ac = new AbortController();
+      r.querySelector('#dcStop').onclick = () => { keep = true; ac.abort(); };
+      AI.generate({
+        messages: AI.buildDeaiMessages(raw, hits),
+        signal: ac.signal,
+        onDelta: (p) => { acc += p; out.textContent = acc; out.scrollTop = out.scrollHeight; },
+      }).then((full) => {
+        if (keep) return;
+        const txt = (full || acc).trim();
+        if (!txt) return App.toast('没有返回内容');
+        showTidyResult(raw, txt, '去 AI 味');
+      }).catch((e) => {
+        if (e && e.name === 'AbortError') return App.toast('已停止');
+        App.toast(String(e && e.message || e), 3400);
+      });
     });
   }
 

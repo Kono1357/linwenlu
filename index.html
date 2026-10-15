@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 01:54 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 02:03 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -669,6 +669,29 @@ input[type="number"] { font-family: var(--mono); }
 .msg__len { margin-left: 7px; font-size: 10.5px; color: var(--ink-3); font-family: var(--mono); }
 .msg__len.is-short { color: var(--accent); font-weight: 600; }
 
+/* 消息上的 AI 味标记 */
+.msg__ai {
+  margin-left: 7px; padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: 10.5px; background: var(--surface-2); color: var(--ink-3);
+  border: 1px solid var(--line); font-family: var(--ui);
+  transition: all .15s var(--ease);
+}
+.msg__ai:hover { border-color: var(--ink-3); color: var(--ink-2); }
+.msg__ai.is-heavy { background: var(--red-soft); color: var(--red); border-color: #f0c9c4; font-weight: 600; }
+
+/* AI 味详情 */
+.flavorhit { padding: 13px 0; border-bottom: 1px solid var(--line); }
+.flavorhit:last-of-type { border-bottom: none; }
+.flavorhit__hd { display: flex; align-items: baseline; gap: 9px; margin-bottom: 6px; }
+.flavorhit__n { font-size: 13.5px; font-weight: 620; flex: 1; }
+.flavorhit__c { font-size: 11.5px; color: var(--ink-3); font-family: var(--mono); }
+.flavorhit__why { font-size: 12.5px; color: var(--ink-2); line-height: 1.75; }
+.flavorhit__s {
+  font-size: 12.5px; color: var(--accent-2); margin: 6px 0;
+  font-family: var(--serif); line-height: 1.8;
+}
+.flavorhit__fix { font-size: 12px; color: var(--ink-3); }
+
 /* 新名字的证据句 */
 .nameblock { border-bottom: 1px solid var(--line); }
 .nameblock .namerow { border-bottom: none; }
@@ -882,7 +905,7 @@ body.is-stream .reader__head { display: none; }
   .selbar { max-width: calc(100% - 16px); }
 }
 </style>
-<meta name="build" content="2026-10-16 01:54">
+<meta name="build" content="2026-10-16 02:03">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -1063,6 +1086,8 @@ const Store = (() => {
       lastCommit: 'append',
       targetWords: 800,
       theme: 'light',
+      deai: true,          // 每次生成都注入「去 AI 味铁律」
+      deaiRules: '',       // 作者自己追加的禁令（会拼在铁律后面）
     };
   }
 
@@ -1712,6 +1737,189 @@ const Format = (() => {
   return { tidy, tidyPunct, similar, bare, diffSummary, findDupes };
 })();
 
+/* ─── js/aiflavor.js ─── */
+/* ════════════════════════════════════════════
+   临文录 · AI 味检测
+   把"写作设定"里那套去 AI 味的判据做成可执行的规则：
+   生成完自动扫一遍，告诉你哪几句露了机器痕迹，能直接改。
+
+   设计取向：**只报有把握的**。
+   中文里「眼神」「有些」「一丝」本身完全正常，只有当它们在一段里
+   密集堆叠时才说明问题 —— 所以频次类判据按"每千字密度"算，
+   而不是见一次报一次。
+   ════════════════════════════════════════════ */
+
+const AiFlavor = (() => {
+
+  /* ── 一、句式类：命中即算，不看密度 ── */
+  const PATTERNS = [
+    {
+      id: 'notbut', name: '伪反转句', weight: 6,
+      re: /不是[^。！？；\n]{1,30}?而是/g,   // 中间允许逗号（"不是不想说话，而是……"）
+      why: '「不是……而是……」是机器最深的肌肉记忆，用来制造假的深度',
+      fix: '改成直接陈述：把你要说的那句正面写出来就行',
+    },
+    {
+      id: 'academic', name: '学术腔', weight: 5,
+      re: /(综上所述|值得注意的是|本质上|事实上|总的来说|不难看出|显而易见|换言之)/g,
+      why: '小说里没有人这样说话',
+      fix: '删掉这个过渡，直接写下一句',
+    },
+    {
+      id: 'enumerate', name: '三段论结构', weight: 4,
+      re: /(?:^|[。！？\n])\s*(首先|其次|再者|最后|第一|第二|第三)[，、]/g,
+      why: '叙述被拆成了编号清单',
+      fix: '把顺序词去掉，让意思自己流动',
+    },
+    {
+      id: 'clock', name: '叙事时钟词', weight: 4,
+      re: /(当[^，。！？\n]{1,14}的时候|与此同时|就在这一刻|就在此时|就在这时候|这一刻)/g,
+      why: '这是把画面"报"出来，不是写出来',
+      fix: '直接写那个动作，不要先报时间',
+    },
+    {
+      id: 'tonetag', name: '给语气打标签', weight: 6,
+      re: /(语气里(?:带着|透着|有)|声音里(?:带着|透着)|用一种[^，。！？\n]{1,12}的(?:口吻|语气)|用[^，。！？\n]{0,8}的语气(?:说|道)|语气(?:平静|冰冷|温柔|低沉|生硬)地)/g,
+      why: '语气应该由说的话本身传达，贴标签等于替读者下结论',
+      fix: '删掉标签，让台词自己说话；或者补一个具体动作',
+    },
+    {
+      id: 'inner', name: '无中生有的内心戏', weight: 6,
+      re: /(不禁(?:思考|想|感慨|感叹)|这个念头|这个认知|心中(?:暗道|想道)|(tā|他|她)心想|(?:他|她)想着)/g,
+      why: '心理活动被直接解说，读者失去了自己体会的空间',
+      fix: '用动作、停顿、台词暗示；写"她停了很久"比写"她在想"强',
+    },
+    {
+      id: 'paren', name: '圆括号内心戏', weight: 5,
+      re: /（(?:心想|心道|暗想|内心)[:：]/g,
+      why: '括号里塞独白，是剧本写法不是小说写法',
+      fix: '改成正文里的动作或对白',
+    },
+    {
+      id: 'stereotype', name: '样板比喻', weight: 8,
+      re: /(轻得像羽毛|像羽毛一?样|石子(?:投|入)湖|涟漪(?:般|似的|一样)?(?:扩散|荡开|散开)|像涟漪|如同一潭|像(?:平静的)?湖面)/g,
+      why: '这三个是机器比喻的样板间',
+      fix: '删掉比喻，直接写状态',
+    },
+    {
+      id: 'bannedDetail', name: '套路化身体细节', weight: 3,
+      re: /(水钻|choker|腰封|流苏|尾椎骨|肩胛骨|耻骨|骨节|茧子|踉跄)/g,
+      why: '这类词在某批模型里高频到成了指纹',
+      fix: '换成这个角色真正会有的东西',
+    },
+  ];
+
+  /* ── 二、明喻总量：整篇有配额 ── */
+  const SIMILE = {
+    id: 'simile', name: '明喻词偏多', weight: 2,
+    re: /(好像|似的|如同|仿佛)/g,
+    quota: 2,   // 每千字
+    why: '「好像/似的/如同/仿佛」一多，文风立刻变软',
+    fix: '直接写状态，不要"像……一样"',
+  };
+
+  /* ── 三、滥用词：按密度算，不是见一次就报 ── */
+  const CLICHES = [
+    '认真', '火花', '光芒', '摩挲', '不容置疑', '挑眉', '低声', '不易察觉',
+    '一丝', '勾起嘴角', '坚定', '深吸一口气', '闪过', '微微', '轻微', '眼神',
+    '夜色如墨', '几不可闻', '仿佛', '嘴角', '眸光', '瞳孔',
+  ];
+  const CLICHE_DENSITY = 4;   // 每千字出现多少次算密集
+
+  const esc = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  /** 数一段里出现几次（用 split 不用正则，避免特殊字符问题） */
+  function countOf(text, word) {
+    if (!word) return 0;
+    let n = 0, i = 0;
+    while ((i = text.indexOf(word, i)) !== -1) { n++; i += word.length; }
+    return n;
+  }
+
+  /**
+   * 扫一段文本，返回 { score, level, len, per1k, hits:[…] }
+   * score 是"每千字扣分"，越低越干净。
+   */
+  function scan(text) {
+    const src = String(text || '');
+    const len = src.replace(/\s/g, '').length;
+    if (len < 60) return { score: 0, level: 'clean', len, per1k: 0, hits: [] };
+
+    const k = len / 1000;
+    const hits = [];
+
+    // 句式：命中即报
+    PATTERNS.forEach((p) => {
+      const m = src.match(p.re) || [];
+      if (!m.length) return;
+      const uniq = [...new Set(m.map((x) => x.replace(/^[。！？\n]\s*/, '')))];
+      hits.push({
+        id: p.id, name: p.name,
+        count: m.length,
+        samples: uniq.slice(0, 4),
+        why: p.why, fix: p.fix,
+        penalty: p.weight * Math.min(m.length, 4),
+      });
+    });
+
+    // 明喻：超配额才报。下限给 2 —— 短段落里出现一两次"好像"完全正常，
+    // 「整篇不超过 2 次」是给单次回复定的规矩，长章按密度折算更合理。
+    const sm = src.match(SIMILE.re) || [];
+    const smAllow = Math.max(2, Math.round(SIMILE.quota * k));
+    if (sm.length > smAllow) {
+      hits.push({
+        id: SIMILE.id, name: SIMILE.name,
+        count: sm.length, allow: smAllow,
+        samples: [...new Set(sm)].slice(0, 4),
+        why: SIMILE.why, fix: SIMILE.fix,
+        penalty: SIMILE.weight * Math.min(sm.length - smAllow, 5),
+      });
+    }
+
+    // 滥用词：按密度
+    const dense = [];
+    CLICHES.forEach((w) => {
+      const n = countOf(src, w);
+      if (n >= 3) dense.push({ w, n });
+    });
+    dense.sort((a, b) => b.n - a.n);
+    const denseTotal = dense.reduce((n, x) => n + x.n, 0);
+    const allowTotal = Math.max(2, Math.round(CLICHE_DENSITY * k));
+    if (denseTotal > allowTotal) {
+      hits.push({
+        id: 'cliche', name: '高频词堆叠',
+        count: denseTotal, allow: allowTotal,
+        samples: dense.slice(0, 6).map((x) => `${x.w}×${x.n}`),
+        why: '这些词不是不能用，是密起来就成了机器味',
+        fix: '能换具体说法就换；同一段里不要重复',
+        penalty: 3 * Math.min(denseTotal - allowTotal, 6),
+      });
+    }
+
+    const penalty = hits.reduce((n, h) => n + h.penalty, 0);
+    const per1k = Math.round((penalty / Math.max(k, 0.3)) * 10) / 10;
+    const level = per1k >= 14 ? 'heavy' : (per1k >= 7 ? 'some' : 'clean');
+
+    return { score: per1k, level, len, per1k, hits };
+  }
+
+  /** 一行摘要，给消息标签用 */
+  function label(res) {
+    if (!res || !res.hits.length) return '';
+    return res.level === 'heavy' ? `AI 味重 · ${res.hits.length} 类`
+      : `AI 味 ${res.hits.length} 类`;
+  }
+
+  /**
+   * 整理整章：给正文做一次全文扫描（按整章密度算，比逐段准）
+   */
+  function scanChapter(text) {
+    return scan(text);
+  }
+
+  return { scan, scanChapter, label, PATTERNS, CLICHES };
+})();
+
 /* ─── js/api.js ─── */
 /* ════════════════════════════════════════════
    临文录 · AI 层
@@ -1860,6 +2068,8 @@ const AI = (() => {
       '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
       '需要有新角色出场时，先从人物表里挑最合适的那个，表里确实没有才新建，',
       '并且同一个角色前后的称呼必须保持一致，不要用"某个人""一个男人"这类泛称代替已有角色。',
+      (st.config.deai === false) ? '' : DEAI_RULES,
+      st.config.deaiRules ? String(st.config.deaiRules).trim() : '',
       lenRule,
       modeRule,
     ].filter(Boolean).join('\n');
@@ -1876,6 +2086,45 @@ const AI = (() => {
     })).filter((m, i, a) => !(i === a.length - 1 && m.role === 'assistant' && a[a.length - 1].content === ask));
 
     return [{ role: 'system', content: sys }, ...history, { role: 'user', content: userParts.join('\n\n') }];
+  }
+
+  /* ── 去 AI 味铁律：默认注入每次生成 ── */
+  const DEAI_RULES = [
+    '【写作铁律 · 去 AI 味】逐条遵守：',
+    '· 禁用「不是……而是……」句式（机器最深的肌肉记忆，用来制造假深度）',
+    '· 禁用「综上所述 / 值得注意的是 / 本质上 / 事实上 / 总的来说」这类学术腔',
+    '· 禁用「首先 / 其次 / 此外」的三段论；段落靠意思自然衔接，不用过渡词硬连',
+    '· 禁用「当……的时候 / 与此同时 / 就在这一刻」——这是把画面"报"出来，直接写动作',
+    '· 不给语气打标签（「语气里带着……」「声音里透着……」「用一种……的口吻」），语气靠台词本身',
+    '· 不写无中生有的内心戏（「他不禁思考」「这个念头」「她心想」），用动作和停顿暗示',
+    '· 明喻从严：「好像 / 似的 / 如同 / 仿佛」全篇不超过 2 次',
+    '· 这些词尽量别用：认真、光芒、摩挲、挑眉、不易察觉、勾起嘴角、深吸一口气、微微、一丝',
+    '· 对话像真人说话：允许省略句、语气词、打断；长短句交错，不要一人一句轮着来',
+    '· 每个角色要有辨识度：遮住名字也能看出是谁在说话',
+  ].join('\n');
+
+  /* ── 针对检测结果做一次「去 AI 味」重写 ── */
+  function buildDeaiMessages(text, hits) {
+    const list = (hits || []).map((h) =>
+      `· ${h.name}${h.count ? '（' + h.count + ' 处）' : ''}：${(h.samples || []).slice(0, 4).join(' ／ ')}`
+    ).join('\n');
+
+    const sys = [
+      '你是小说编辑，专治机器味。只做一件事：把下面文本里露出的 AI 痕迹改掉。',
+      '**情节、人物、信息量、段落顺序一个字都不许变**；不要润色、不要扩写、不要删内容、不要重排。',
+      '只输出改完的正文，不要解释、不要标注改了什么。',
+      '',
+      DEAI_RULES,
+    ].join('\n');
+
+    const user = [
+      list ? `这一章检测到这些问题：\n${list}\n` : '',
+      `【原文】\n${String(text || '').trim()}`,
+      '',
+      '请改正后输出全文。',
+    ].filter(Boolean).join('\n');
+
+    return [{ role: 'system', content: sys }, { role: 'user', content: user }];
   }
 
   /* ── 整章顺稿：不做上下文装配，直接把全文交给模型修接缝 ── */
@@ -2148,6 +2397,7 @@ const AI = (() => {
 
   return {
     buildContext, buildMessages, buildPromptOnly, buildSmoothMessages, buildEnrichMessages,
+    buildDeaiMessages, DEAI_RULES,
     generate, probe, cut, extractNames, findNewNames, quotesFor,
   };
 })();
@@ -2410,11 +2660,15 @@ const ReadView = (() => {
     const preview = Format.tidy(raw);
     const st = Format.diffSummary(raw, preview);
     const dupes = Format.findDupes(raw);
+    const flavor = AiFlavor.scan(raw);
 
     App.sheet('整理本章 · ' + c.title, `
       <div class="tidystat">
         <span>现在 ${st.beforeParas} 段 · ${st.beforeChars} 字</span>
         ${dupes.length ? `<span class="tidystat__warn">疑似重复 ${dupes.length} 处</span>` : '<span class="tidystat__ok">没发现重复段</span>'}
+        ${flavor.hits.length
+        ? `<span class="${flavor.level === 'heavy' ? 'tidystat__warn' : ''}">AI 味 ${flavor.hits.length} 类 · ${flavor.per1k} 分/千字</span>`
+        : '<span class="tidystat__ok">AI 味检查干净</span>'}
       </div>
 
       <button class="btn" id="tdLocal" style="margin-top:14px">一键排版（本地 · 免费）</button>
@@ -2426,15 +2680,64 @@ const ReadView = (() => {
       <div class="sec-title">再进一步</div>
       <button class="btn btn--ghost" id="tdAI">让 AI 顺一遍衔接</button>
       <div class="field__hint" style="margin-top:8px">
-        通读全章，修接缝、去重复、补上场景之间缺的一两句过渡；
-        <b>不改情节、不增删事件</b>。需要配置模型。
+        通读全章，修接缝、去重复、补上场景之间缺的一两句过渡；<b>不改情节、不增删事件</b>。
       </div>
+      <button class="btn btn--ghost" id="tdDeai" style="margin-top:10px">针对 AI 味改一遍</button>
+      <div class="field__hint" style="margin-top:8px">
+        ${flavor.hits.length
+        ? '只改检测出来的机器痕迹，情节与信息量一个字不动。'
+        : '这一次没检出明显的机器痕迹，也可以跑一遍保险。'}
+      </div>
+
+      ${flavor.hits.length ? `
+        <div class="sec-title">AI 味体检</div>
+        ${flavor.hits.map((h) => `
+          <div class="flavorhit">
+            <div class="flavorhit__hd">
+              <span class="flavorhit__n">${esc(h.name)}</span>
+              <span class="flavorhit__c">${h.count} 处${h.allow ? ` / 建议 ≤ ${h.allow}` : ''}</span>
+            </div>
+            <div class="flavorhit__why">${esc(h.why)}</div>
+            <div class="flavorhit__s">${h.samples.map((s) => '「' + esc(s) + '」').join(' ')}</div>
+            <div class="flavorhit__fix">→ ${esc(h.fix)}</div>
+          </div>`).join('')}` : ''}
+
       ${dupes.length ? `
         <div class="sec-title">疑似重复的地方</div>
         <div class="quotebox">${dupes.slice(0, 6).map((x) => '· ' + esc(x.text) + '…').join('<br>')}</div>` : ''}
     `, (r) => {
       r.querySelector('#tdLocal').onclick = () => showTidyResult(raw, Format.tidy(raw), '本地排版');
       r.querySelector('#tdAI').onclick = () => runSmooth(raw);
+      r.querySelector('#tdDeai').onclick = () => runDeaiChapter(raw, flavor.hits);
+    });
+  }
+
+  /* 整章去 AI 味：复用对话里的那套重写流程 */
+  async function runDeaiChapter(raw, hits) {
+    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
+    let keep = false;
+    App.sheet('正在去 AI 味', `
+      <div class="field__hint">只改机器痕迹，情节与信息量不动。</div>
+      <div class="tidyview" id="dcOut" style="margin-top:12px;min-height:140px"></div>
+      <button class="btn btn--ghost" id="dcStop" style="margin-top:12px">停止</button>
+    `, (r) => {
+      const out = r.querySelector('#dcOut');
+      let acc = '';
+      const ac = new AbortController();
+      r.querySelector('#dcStop').onclick = () => { keep = true; ac.abort(); };
+      AI.generate({
+        messages: AI.buildDeaiMessages(raw, hits),
+        signal: ac.signal,
+        onDelta: (p) => { acc += p; out.textContent = acc; out.scrollTop = out.scrollHeight; },
+      }).then((full) => {
+        if (keep) return;
+        const txt = (full || acc).trim();
+        if (!txt) return App.toast('没有返回内容');
+        showTidyResult(raw, txt, '去 AI 味');
+      }).catch((e) => {
+        if (e && e.name === 'AbortError') return App.toast('已停止');
+        App.toast(String(e && e.message || e), 3400);
+      });
     });
   }
 
@@ -2835,6 +3138,16 @@ const ChatView = (() => {
     const lenTag = (m.role === 'ai')
       ? `<span class="msg__len ${short ? 'is-short' : ''}">${len} 字${short ? ` · 差 ${tw - len}` : ''}</span>`
       : '';
+
+    // AI 味：每条生成就地体检一次
+    let flavorTag = '';
+    if (m.role === 'ai') {
+      const f = AiFlavor.scan(m.text);
+      if (f.hits.length) {
+        flavorTag = `<button class="msg__ai ${f.level === 'heavy' ? 'is-heavy' : ''}" data-flavor="${m.id}">${AiFlavor.label(f)}</button>`;
+      }
+    }
+
     const isBase = replyTo && replyTo.id === m.id;
     const acts = (m.role === 'ai') ? `
       <div class="msg__acts" data-acts="${m.id}">
@@ -2846,13 +3159,96 @@ const ChatView = (() => {
         ${m.clipped ? '' : '<button class="mini-btn" data-act="setting">存为设定</button>'}
       </div>` : '';
     return `<div class="msg ${cls}" data-msg="${m.id}">
-      <div class="msg__who">${who}${lenTag}</div>
+      <div class="msg__who">${who}${lenTag}${flavorTag}</div>
       <div class="msg__body">${hl(m.text)}</div>
       ${acts}
     </div>`;
   }
 
+  /* ── AI 味详情 + 一键重写 ── */
+  function openFlavor(id) {
+    const m = Store.chat.all().find((x) => x.id === id);
+    if (!m) return;
+    const res = AiFlavor.scan(m.text);
+    if (!res.hits.length) return App.toast('这一段挺干净的');
+
+    App.sheet('AI 味体检', `
+      <div class="tidystat">
+        <span>${res.len} 字</span>
+        <span class="${res.level === 'heavy' ? 'tidystat__warn' : ''}">密度 ${res.per1k} 分/千字</span>
+        <span class="${res.level === 'clean' ? 'tidystat__ok' : 'tidystat__warn'}">${res.level === 'heavy' ? '偏重' : (res.level === 'some' ? '有一些' : '干净')}</span>
+      </div>
+      ${res.hits.map((h) => `
+        <div class="flavorhit">
+          <div class="flavorhit__hd">
+            <span class="flavorhit__n">${esc(h.name)}</span>
+            <span class="flavorhit__c">${h.count} 处${h.allow ? ` / 建议 ≤ ${h.allow}` : ''}</span>
+          </div>
+          <div class="flavorhit__why">${esc(h.why)}</div>
+          <div class="flavorhit__s">${h.samples.map((s) => '「' + esc(s) + '」').join(' ')}</div>
+          <div class="flavorhit__fix">→ ${esc(h.fix)}</div>
+        </div>`).join('')}
+      <button class="btn" id="fvRewrite" style="margin-top:16px">让 AI 按这些改一遍</button>
+      <div class="field__hint" style="margin-top:8px">只改这些痕迹，情节与信息量一个字不动。</div>
+    `, (r) => {
+      r.querySelector('#fvRewrite').onclick = () => runDeai(m, res);
+    });
+  }
+
+  async function runDeai(m, res) {
+    if (!Store.config.ready()) return App.toast('先配置模型（右上 ⚙）');
+    let keep = false;
+    App.sheet('正在去 AI 味', `
+      <div class="field__hint">只改机器痕迹，情节与信息量不动。</div>
+      <div class="tidyview" id="dvOut" style="margin-top:12px;min-height:140px"></div>
+      <button class="btn btn--ghost" id="dvStop" style="margin-top:12px">停止</button>
+    `, (r) => {
+      const out = r.querySelector('#dvOut');
+      let acc = '';
+      const ac = new AbortController();
+      r.querySelector('#dvStop').onclick = () => { keep = true; ac.abort(); };
+      AI.generate({
+        messages: AI.buildDeaiMessages(m.text, res.hits),
+        signal: ac.signal,
+        onDelta: (p) => { acc += p; out.textContent = acc; out.scrollTop = out.scrollHeight; },
+      }).then((full) => {
+        if (keep) return;
+        const txt = (full || acc).trim();
+        if (!txt) return App.toast('没有返回内容');
+        const after = AiFlavor.scan(txt);
+        App.sheet('改完了', `
+          <div class="tidystat">
+            <span>${res.hits.length} 类 → ${after.hits.length} 类</span>
+            <span>密度 ${res.per1k} → ${after.per1k}</span>
+          </div>
+          <div class="field__label" style="margin-top:14px">预览</div>
+          <div class="tidyview">${esc(txt.slice(0, 700))}${txt.length > 700 ? '\n…' : ''}</div>
+          <button class="btn" id="dvNew" style="margin-top:16px">改后的作为新一段</button>
+          <button class="btn btn--ghost" id="dvReplace" style="margin-top:8px">替换这一段</button>
+          <button class="btn btn--ghost" id="dvBack" style="margin-top:8px">不要</button>
+        `, (r2) => {
+          r2.querySelector('#dvNew').onclick = () => {
+            Store.chat.push('ai', txt, { chapterId: m.chapterId });
+            App.closeSheet(); renderFlow(); App.toast('已作为新一段');
+          };
+          r2.querySelector('#dvReplace').onclick = () => {
+            m.text = txt;
+            Store.save();
+            App.closeSheet(); renderFlow(); App.toast('已替换');
+          };
+          r2.querySelector('#dvBack').onclick = () => { App.closeSheet(); openFlavor(m.id); };
+        });
+      }).catch((e) => {
+        if (e && e.name === 'AbortError') return App.toast('已停止');
+        App.toast(String(e && e.message || e), 3400);
+      });
+    });
+  }
+
   function bindActs() {
+    el.flow.querySelectorAll('[data-flavor]').forEach((b) => {
+      b.onclick = () => openFlavor(b.dataset.flavor);
+    });
     el.flow.querySelectorAll('[data-acts]').forEach((box) => {
       const id = box.dataset.acts;
       box.querySelectorAll('[data-act]').forEach((b) => {
@@ -3847,6 +4243,21 @@ const App = (() => {
         <label class="field__label">文风约束</label>
         <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
       </div>
+      <div class="sec-title">去 AI 味</div>
+      <label class="pickrow">
+        <input type="checkbox" id="cfgDeai" ${c.deai === false ? '' : 'checked'}>
+        <span class="pickrow__k">每次生成都注入「去 AI 味铁律」</span>
+      </label>
+      <div class="field">
+        <label class="field__label">自己再补几条禁令（可选）</label>
+        <textarea class="textarea" id="cfgDeaiRules" style="min-height:80px"
+          placeholder="一行一条，例如：&#10;不许用「值得注意」&#10;对话不许超过三句连着说">${esc(c.deaiRules || '')}</textarea>
+        <div class="field__hint">
+          内置的铁律见下方；你补的会拼在后面。<br>
+          <span style="opacity:.75">禁用「不是…而是…」／学术腔／三段论／「当…时」／给语气打标签／无中生有内心戏；明喻全篇≤2 次；克制「认真、光芒、摩挲、挑眉、微微」等词；对话要像真人、角色要有辨识度。</span>
+        </div>
+      </div>
+
       <div class="sec-title">外观</div>
       <label class="pickrow">
         <input type="radio" name="theme" value="light" ${Store.get().config.theme === 'dark' ? '' : 'checked'}>
@@ -3909,6 +4320,8 @@ const App = (() => {
           commitMode: cm ? cm.value : 'ask',
           targetWords: Number(g('#cfgWords').value) || 0,
           theme: th ? th.value : 'light',
+          deai: g('#cfgDeai') ? g('#cfgDeai').checked : true,
+          deaiRules: g('#cfgDeaiRules') ? g('#cfgDeaiRules').value.trim() : '',
         });
         applyTheme();
         closeSheet(); ChatView.hint(); toast('已保存');

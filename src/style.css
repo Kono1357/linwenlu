@@ -658,6 +658,29 @@ input[type="number"] { font-family: var(--mono); }
 .msg__len { margin-left: 7px; font-size: 10.5px; color: var(--ink-3); font-family: var(--mono); }
 .msg__len.is-short { color: var(--accent); font-weight: 600; }
 
+/* 消息上的 AI 味标记 */
+.msg__ai {
+  margin-left: 7px; padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: 10.5px; background: var(--surface-2); color: var(--ink-3);
+  border: 1px solid var(--line); font-family: var(--ui);
+  transition: all .15s var(--ease);
+}
+.msg__ai:hover { border-color: var(--ink-3); color: var(--ink-2); }
+.msg__ai.is-heavy { background: var(--red-soft); color: var(--red); border-color: #f0c9c4; font-weight: 600; }
+
+/* AI 味详情 */
+.flavorhit { padding: 13px 0; border-bottom: 1px solid var(--line); }
+.flavorhit:last-of-type { border-bottom: none; }
+.flavorhit__hd { display: flex; align-items: baseline; gap: 9px; margin-bottom: 6px; }
+.flavorhit__n { font-size: 13.5px; font-weight: 620; flex: 1; }
+.flavorhit__c { font-size: 11.5px; color: var(--ink-3); font-family: var(--mono); }
+.flavorhit__why { font-size: 12.5px; color: var(--ink-2); line-height: 1.75; }
+.flavorhit__s {
+  font-size: 12.5px; color: var(--accent-2); margin: 6px 0;
+  font-family: var(--serif); line-height: 1.8;
+}
+.flavorhit__fix { font-size: 12px; color: var(--ink-3); }
+
 /* 新名字的证据句 */
 .nameblock { border-bottom: 1px solid var(--line); }
 .nameblock .namerow { border-bottom: none; }

@@ -35,6 +35,8 @@ const Store = (() => {
       lastCommit: 'append',
       targetWords: 800,
       theme: 'light',
+      deai: true,          // 每次生成都注入「去 AI 味铁律」
+      deaiRules: '',       // 作者自己追加的禁令（会拼在铁律后面）
     };
   }
 
