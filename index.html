@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 02:14 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 02:17 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -905,7 +905,7 @@ body.is-stream .reader__head { display: none; }
   .selbar { max-width: calc(100% - 16px); }
 }
 </style>
-<meta name="build" content="2026-10-16 02:14">
+<meta name="build" content="2026-10-16 02:17">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -4034,8 +4034,6 @@ const WorldView = (() => {
         if (s) Store.setting.update(s.id, patch); else Store.setting.add(patch);
         App.closeSheet(); render(); App.toast(s ? '已保存' : '已添加');
       };
-      const en = r.querySelector('#stEnrich');   // 旧版按钮，现在不再提供
-      if (en) en.remove();
       if (s) r.querySelector('#stDel').onclick = () => {
         if (!confirm('删除这条设定？')) return;
         Store.setting.remove(s.id); App.closeSheet(); render(); App.toast('已删除');

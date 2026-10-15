@@ -225,8 +225,6 @@ const WorldView = (() => {
         if (s) Store.setting.update(s.id, patch); else Store.setting.add(patch);
         App.closeSheet(); render(); App.toast(s ? '已保存' : '已添加');
       };
-      const en = r.querySelector('#stEnrich');   // 旧版按钮，现在不再提供
-      if (en) en.remove();
       if (s) r.querySelector('#stDel').onclick = () => {
         if (!confirm('删除这条设定？')) return;
         Store.setting.remove(s.id); App.closeSheet(); render(); App.toast('已删除');
