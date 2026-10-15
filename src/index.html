@@ -13,15 +13,19 @@
 
 <!-- ══ 顶栏 ══ -->
 <header class="topbar">
-  <button class="topbar__title" id="btnBook" title="作品设置">
+  <button class="topbar__title" id="btnBook" title="作品信息">
     <span class="topbar__name" id="bookName">临文录</span>
     <span class="topbar__meta" id="bookMeta">未命名作品</span>
   </button>
   <div class="topbar__actions">
     <button class="icon-btn" id="btnStream" title="专注模式">◎</button>
-    <button class="icon-btn" id="btnMenu" title="更多">⋯</button>
+    <button class="icon-btn" id="btnViewAction" title="更多">⋯</button>
+    <button class="icon-btn icon-btn--key" id="btnSettings" title="设置（模型 / 数据）">⚙</button>
   </div>
 </header>
+
+<!-- 专注模式的退出口：必须独立于顶栏，否则进得去出不来 -->
+<button class="stream-exit" id="streamExit" hidden>✕ 退出专注</button>
 
 <!-- ══ 主区：三个模块 ══ -->
 <main class="stage">
@@ -32,6 +36,9 @@
       <div class="pane__head">
         <h2 class="pane__title">剧情</h2>
         <button class="mini-btn" id="btnNewChapter">+ 新章</button>
+      </div>
+      <div class="chapfind">
+        <input class="input input--sm" id="chapterSearch" placeholder="搜章节名 / 正文…">
       </div>
       <div class="chapter-list" id="chapterList"></div>
     </div>
@@ -45,17 +52,13 @@
           <button class="mini-btn" id="btnEditChapter" title="改写正文">✎</button>
         </div>
       </div>
-      <article class="reader" id="reader" tabindex="0">
-        <div class="empty" id="readerEmpty">
-          <p>左边选一章，<br>或者按下面的「提要求」开始写。</p>
-        </div>
-      </article>
+      <article class="reader" id="reader" tabindex="0"></article>
       <div class="selbar" id="selbar" hidden>
-        <span class="selbar__label">选中了 <b id="selCount">0</b> 字</span>
+        <span class="selbar__label">选中 <b id="selCount">0</b> 字</span>
         <button class="mini-btn" data-sel="rewrite">改写</button>
         <button class="mini-btn" data-sel="expand">扩写</button>
         <button class="mini-btn" data-sel="ask">提问</button>
-        <button class="mini-btn" data-sel="setting">存为设定</button>
+        <button class="mini-btn" data-sel="setting">存设定</button>
       </div>
     </div>
   </section>
@@ -67,10 +70,19 @@
         <span class="chat__targetLabel">写作目标</span>
         <button class="chip" id="btnTarget"></button>
       </div>
-      <button class="mini-btn" id="btnContext" title="查看将带入的上下文">上下文</button>
+      <div class="chat__headActs">
+        <button class="mini-btn" id="btnFind" title="在对话里查找">查找</button>
+        <button class="mini-btn" id="btnContext" title="查看将带入的上下文">上下文</button>
+      </div>
+    </div>
+
+    <div class="findbar" id="chatFind" hidden>
+      <input class="input input--sm" id="chatSearch" placeholder="搜对话内容…">
+      <div class="chips" id="chatChips"></div>
     </div>
 
     <div class="chat__flow" id="chatFlow"></div>
+    <button class="jumpdown" id="btnJumpDown" hidden>↓ 最新</button>
 
     <div class="chat__composer">
       <div class="chat__hint" id="chatHint"></div>
@@ -93,6 +105,18 @@
       <button class="seg__btn" data-seg="setting">设定</button>
     </div>
 
+    <div class="world__tools">
+      <input class="input input--sm" id="worldSearch" placeholder="搜索名称 / 说明…">
+      <button class="mini-btn" id="btnWorldPick" title="多选管理">多选</button>
+    </div>
+    <div class="pickbar" id="worldPickbar" hidden>
+      <span class="pickbar__count" id="pickCount">已选 0</span>
+      <button class="mini-btn" id="pickAll">全选</button>
+      <button class="mini-btn" id="pickInvert">反选</button>
+      <button class="mini-btn mini-btn--danger" id="pickDel">删除</button>
+      <button class="mini-btn" id="pickCancel">退出</button>
+    </div>
+
     <div class="world__body" id="worldBody"></div>
 
     <button class="fab" id="btnAddWorld" title="新增">+</button>
@@ -107,7 +131,7 @@
   <button class="tab" data-go="world"><i>◇</i><span>世界线</span></button>
 </nav>
 
-<!-- ══ 抽屉：设置 ══ -->
+<!-- ══ 抽屉 ══ -->
 <div class="sheet" id="sheet" hidden>
   <div class="sheet__mask" data-close></div>
   <div class="sheet__panel">

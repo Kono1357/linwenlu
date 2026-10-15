@@ -19,9 +19,23 @@ const App = (() => {
     Object.entries(map).forEach(([k, node]) => { node.hidden = k !== name; });
     el.tabbar.querySelectorAll('.tab').forEach((t) => t.classList.toggle('is-on', t.dataset.go === name));
     if (name !== 'read') document.body.classList.remove('is-reading');
+    if (name !== 'read' && document.body.classList.contains('is-stream')) setStream(false);
     if (name === 'chat' && ChatView) ChatView.refreshAll();
     if (name === 'world' && WorldView) WorldView.render();
     if (name === 'read' && ReadView) ReadView.refresh();
+  }
+
+  /* ── 专注模式：进去必须能出来 ── */
+  function setStream(on) {
+    document.body.classList.toggle('is-stream', !!on);
+    const ex = document.getElementById('streamExit');
+    if (ex) ex.hidden = !on;
+    if (on) {
+      if (cur !== 'read') go('read');
+      if (!Store.chapter.active()) { toast('先进一章再开专注', 2400); setStream(false); return; }
+      document.body.classList.add('is-reading');
+      ReadView.clearSelection();
+    }
   }
 
   /* ── Toast ── */
@@ -154,19 +168,22 @@ const App = (() => {
   }
 
   /* ── 设置：数据 ── */
-  function openDataSettings() {
+  function openDataSettings(anchor) {
     sheet('数据', `
       <button class="btn" id="dExp">导出存档（.json）</button>
-      <button class="btn btn--ghost" id="dImp" style="margin-top:8px">导入存档</button>
+      <button class="btn btn--ghost" id="dImp" style="margin-top:8px">导入存档…</button>
       <input type="file" id="dFile" accept=".json,application/json" hidden>
-      <div class="sec-title">正文</div>
+
+      <div class="sec-title" id="secText">正文</div>
       <button class="btn btn--ghost" id="dMd">导出正文（.md）</button>
       <button class="btn btn--ghost" id="dTxt" style="margin-top:8px">导入正文（.txt / .md，自动按章切分）</button>
       <input type="file" id="dTxtFile" accept=".txt,.md,text/plain,text/markdown" hidden>
       <div class="field__hint" style="margin-top:10px">
-        导入时会识别「第N章 / 第N回 / 第N节」这类行作为分章标题，切不开就整篇作为一章。
+        导入时识别「第N章 / 第N回 / 第N节」这类行作为分章标题，切不开就整篇作为一章。
       </div>
-      <button class="btn btn--danger" id="dReset" style="margin-top:22px">清空全部数据</button>
+
+      <div class="sec-title">危险操作</div>
+      <button class="btn btn--danger" id="dReset">清空全部数据</button>
       <div class="field__hint" style="margin-top:14px">
         数据存在这台设备的浏览器里。换设备、换浏览器、清理缓存都会丢，<b>重要内容请定期导出</b>。
       </div>
@@ -188,21 +205,10 @@ const App = (() => {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
         const rd = new FileReader();
-        rd.onload = () => {
-          const res = Store.importJSON(String(rd.result || ''));
-          if (!res.ok) return toast('导入失败：' + res.reason, 3200);
-          closeSheet(); renderAll();
-          toast(`已导入：${res.chapters} 章 / ${res.settings} 设定 / ${res.lines} 世界线`, 2600);
-        };
+        rd.onload = () => openImportPreview(String(rd.result || ''), f.name);
         rd.readAsText(f, 'utf-8');
       };
-      r.querySelector('#dMd').onclick = () => {
-        const st = Store.get();
-        const md = [`# ${st.book.title}`, st.book.genre ? `> ${st.book.genre}` : '', '']
-          .concat(st.chapters.map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
-        download((st.book.title || '临文录') + '.md', md, 'text/markdown');
-        toast('已导出正文');
-      };
+      r.querySelector('#dMd').onclick = () => { exportText(); };
       r.querySelector('#dTxt').onclick = () => r.querySelector('#dTxtFile').click();
       r.querySelector('#dTxtFile').onchange = (e) => {
         const f = e.target.files && e.target.files[0];
@@ -218,7 +224,59 @@ const App = (() => {
       r.querySelector('#dReset').onclick = () => {
         if (!confirm('清空全部数据？这会删掉所有章节、设定和对话，且不可恢复。')) return;
         if (!confirm('真的确定？建议先导出存档。')) return;
-        Store.reset(); Store.load && null; closeSheet(); renderAll(); toast('已清空');
+        Store.reset(); closeSheet(); renderAll(); toast('已清空');
+      };
+      if (anchor === 'text') {
+        const s = r.querySelector('#secText');
+        if (s) s.scrollIntoView({ block: 'start' });
+      }
+    });
+  }
+
+  /* ── 导入预览：先看清楚，再决定要哪些、怎么合 ── */
+  function openImportPreview(text, filename) {
+    const p = Store.parseArchive(text);
+    if (!p.ok) return toast('导入失败：' + p.reason, 3400);
+    const n = p.counts;
+    const row = (key, label, num) => `
+      <label class="pickrow ${num ? '' : 'is-off'}">
+        <input type="checkbox" data-part="${key}" ${num ? 'checked' : 'disabled'}>
+        <span class="pickrow__k">${label}</span>
+        <span class="pickrow__n">${num}</span>
+      </label>`;
+    sheet('导入预览', `
+      <div class="field__hint" style="margin-bottom:12px">
+        文件：${esc(filename || '（未命名）')}<br>
+        作品：<b>${esc(p.title)}</b>
+      </div>
+      <div class="sec-title">要导入哪些</div>
+      ${row('chapters', '章节', n.chapters)}
+      ${row('settings', '设定', n.settings)}
+      ${row('lines', '世界线', n.lines)}
+      ${row('chat', '对话记录', n.chat)}
+      <div class="sec-title">怎么合</div>
+      <label class="pickrow">
+        <input type="radio" name="imode" value="merge" checked>
+        <span class="pickrow__k">合并</span>
+        <span class="pickrow__n" style="font-size:11px">同名条目跳过，其他追加</span>
+      </label>
+      <label class="pickrow">
+        <input type="radio" name="imode" value="replace">
+        <span class="pickrow__k">替换</span>
+        <span class="pickrow__n" style="font-size:11px">用文件里的覆盖所选部分</span>
+      </label>
+      <button class="btn" id="ipGo" style="margin-top:18px">开始导入</button>
+    `, (r) => {
+      r.querySelector('#ipGo').onclick = () => {
+        const parts = [...r.querySelectorAll('[data-part]:checked')].map((x) => x.dataset.part);
+        if (!parts.length) return toast('至少选一项');
+        const mode = (r.querySelector('input[name="imode"]:checked') || {}).value || 'merge';
+        const res = Store.importJSON(text, { parts, mode });
+        if (!res.ok) return toast('导入失败：' + res.reason, 3400);
+        const g = res.report;
+        closeSheet(); renderAll();
+        toast(`已导入 章节${g.chapters} · 设定${g.settings} · 世界线${g.lines} · 对话${g.chat}` +
+          (g.skipped ? `（跳过重复 ${g.skipped}）` : ''), 3200);
       };
     });
   }
@@ -276,22 +334,107 @@ const App = (() => {
     el.bookMeta.textContent = parts.join(' · ');
   }
 
-  /* ── 更多菜单 ── */
-  function openMenu() {
-    sheet('菜单', `
-      <button class="btn btn--ghost" id="mModel">模型设置</button>
-      <button class="btn btn--ghost" id="mBook" style="margin-top:8px">作品信息</button>
-      <button class="btn btn--ghost" id="mData" style="margin-top:8px">数据与导出</button>
+  /* ── 设置中心：⚙ 一键直达，改模型不用翻 ── */
+  function openSettings() {
+    const ready = Store.config.ready();
+    sheet('设置', `
+      <button class="navrow" id="mModel">
+        <span class="navrow__k">模型设置</span>
+        <span class="navrow__v">${ready ? esc(Store.get().config.model) : '<span style="color:var(--red)">还没配</span>'}</span>
+        <span class="navrow__a">›</span>
+      </button>
+      <button class="navrow" id="mBook">
+        <span class="navrow__k">作品信息</span>
+        <span class="navrow__v">${esc(Store.get().book.title)}</span>
+        <span class="navrow__a">›</span>
+      </button>
+      <button class="navrow" id="mData">
+        <span class="navrow__k">数据与导出</span>
+        <span class="navrow__v">存档 / 正文 / 导入</span>
+        <span class="navrow__a">›</span>
+      </button>
       <div class="sec-title">快捷键</div>
       <div class="field__hint">
         Ctrl / ⌘ + Enter —— 发送<br>
-        选中正文后 —— 改写 / 扩写 / 提问 / 存为设定
+        选中正文 —— 改写 / 扩写 / 提问 / 存设定<br>
+        点 ◎ —— 专注阅读（右上角 ✕ 退出）
       </div>
     `, (r) => {
       r.querySelector('#mModel').onclick = () => { closeSheet(); openModelSettings(); };
       r.querySelector('#mBook').onclick = () => { closeSheet(); openBookSettings(); };
       r.querySelector('#mData').onclick = () => { closeSheet(); openDataSettings(); };
     });
+  }
+
+  /* ── 顶栏的 ⋯ ：跟着当前模块变，不是同一个菜单 ── */
+  function openViewAction() {
+    if (cur === 'read') {
+      const c = Store.chapter.active();
+      sheet('剧情', `
+        <button class="navrow" id="vaNew"><span class="navrow__k">新建一章</span><span class="navrow__a">+</span></button>
+        ${c ? `<button class="navrow" id="vaVers"><span class="navrow__k">本章版本</span><span class="navrow__v">${c.drafts.length} 稿</span><span class="navrow__a">›</span></button>
+        <button class="navrow" id="vaEdit"><span class="navrow__k">改写正文</span><span class="navrow__a">✎</span></button>` : ''}
+        <div class="sec-title">正文</div>
+        <button class="navrow" id="vaImp"><span class="navrow__k">导入正文</span><span class="navrow__v">.txt / .md 按章切分</span><span class="navrow__a">›</span></button>
+        <button class="navrow" id="vaExp"><span class="navrow__k">导出正文</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
+      `, (r) => {
+        r.querySelector('#vaNew').onclick = () => {
+          const ch = Store.chapter.add({});
+          Store.chapter.setActive(ch.id);
+          closeSheet(); renderAll(); toast('已新建 ' + ch.title);
+        };
+        const v = r.querySelector('#vaVers'); if (v) v.onclick = () => { closeSheet(); ReadView.openVersions(); };
+        const e = r.querySelector('#vaEdit'); if (e) e.onclick = () => { closeSheet(); ReadView.openEditor(); };
+        r.querySelector('#vaImp').onclick = () => { closeSheet(); openDataSettings('text'); };
+        r.querySelector('#vaExp').onclick = () => { closeSheet(); exportText(); };
+      });
+      return;
+    }
+    if (cur === 'chat') {
+      sheet('对话', `
+        <button class="navrow" id="vaFind"><span class="navrow__k">查找对话</span><span class="navrow__v">按内容 / 按章筛选</span><span class="navrow__a">›</span></button>
+        <button class="navrow" id="vaCtx"><span class="navrow__k">查看本次上下文</span><span class="navrow__a">›</span></button>
+        <button class="navrow" id="vaPull"><span class="navrow__k">把全部对话导出</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
+        <div class="sec-title">危险操作</div>
+        <button class="navrow navrow--danger" id="vaClear"><span class="navrow__k">清空对话</span><span class="navrow__v">已写进章节的不受影响</span></button>
+      `, (r) => {
+        r.querySelector('#vaFind').onclick = () => { closeSheet(); ChatView.toggleFind(true); };
+        r.querySelector('#vaCtx').onclick = () => { closeSheet(); ChatView.openContext(); };
+        r.querySelector('#vaPull').onclick = () => {
+          const md = Store.chat.all().map((m) => `### ${m.role === 'me' ? '我' : (m.role === 'ai' ? '临文' : '·')}\n${m.text}`).join('\n\n');
+          download((Store.get().book.title || '临文录') + '-对话.md', md, 'text/markdown');
+          toast('已导出对话');
+        };
+        r.querySelector('#vaClear').onclick = () => {
+          if (!confirm('清空当前对话？已写进章节的内容不受影响。')) return;
+          Store.chat.clear(); closeSheet(); ChatView.renderFlow(); toast('已清空');
+        };
+      });
+      return;
+    }
+    // world
+    sheet('世界线与设定', `
+      <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入（可选要哪些）</span><span class="navrow__v">合并 / 替换</span><span class="navrow__a">›</span></button>
+    `, (r) => {
+      r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
+      r.querySelector('#vaWorldExp').onclick = () => {
+        const st = Store.get();
+        download((st.book.title || '临文录') + '-设定.json',
+          JSON.stringify({ settings: st.settings, lines: st.lines }, null, 2), 'application/json');
+        toast('已导出');
+      };
+      r.querySelector('#vaWorldImp').onclick = () => { closeSheet(); openDataSettings('import'); };
+    });
+  }
+
+  function exportText() {
+    const st = Store.get();
+    const md = [`# ${st.book.title}`, st.book.genre ? `> ${st.book.genre}` : '', '']
+      .concat(st.chapters.map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
+    download((st.book.title || '临文录') + '.md', md, 'text/markdown');
+    toast('已导出正文');
   }
 
   function renderAll() {
@@ -326,12 +469,11 @@ const App = (() => {
       const b = e.target.closest('[data-go]');
       if (b) go(b.dataset.go);
     });
-    document.getElementById('btnMenu').onclick = openMenu;
+    document.getElementById('btnSettings').onclick = openSettings;
+    document.getElementById('btnViewAction').onclick = openViewAction;
     document.getElementById('btnBook').onclick = openBookSettings;
-    document.getElementById('btnStream').onclick = () => {
-      document.body.classList.toggle('is-stream');
-      toast(document.body.classList.contains('is-stream') ? '专注模式（再点一次退出）' : '已退出专注');
-    };
+    document.getElementById('btnStream').onclick = () => setStream(!document.body.classList.contains('is-stream'));
+    document.getElementById('streamExit').onclick = () => setStream(false);
 
     el.sheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
     document.addEventListener('keydown', (e) => {
@@ -366,8 +508,8 @@ const App = (() => {
   }
 
   return {
-    boot, go, toast, sheet, closeSheet,
-    openModelSettings, openBookSettings, openDataSettings,
+    boot, go, toast, sheet, closeSheet, setStream, renderAll,
+    openModelSettings, openBookSettings, openDataSettings, openImportPreview,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),
   };
 })();

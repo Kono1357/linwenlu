@@ -9,8 +9,35 @@ const ChatView = (() => {
   let abort = null;
   let pendingExtra = null;   // { action, text } 来自「看剧情」的选中操作
 
+  // 查找 / 筛选状态
+  let findOn = false;
+  let findQ = '';
+  let findChap = 'all';      // 'all' | 'draft'（未写入）| chapterId
+
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  /** 命中高亮（先转义再包） */
+  function hl(text) {
+    const e = esc(text);
+    if (!findQ) return e;
+    try {
+      const re = new RegExp(findQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      return e.replace(re, (m) => `<span class="hit">${m}</span>`);
+    } catch (_) { return e; }
+  }
+
+  /** 当前筛选下的消息 */
+  function filtered() {
+    let all = Store.chat.all();
+    if (findChap === 'draft') all = all.filter((m) => !m.clipped && m.role === 'ai');
+    else if (findChap !== 'all') all = all.filter((m) => m.chapterId === findChap);
+    if (findQ) {
+      const q = findQ.toLowerCase();
+      all = all.filter((m) => m.text.toLowerCase().includes(q));
+    }
+    return all;
+  }
 
   /* ── 目标章 ── */
   function target() {
@@ -40,8 +67,10 @@ const ChatView = (() => {
 
   /* ── 对话渲染 ── */
   function renderFlow() {
-    const all = Store.chat.all();
-    if (!all.length) {
+    const total = Store.chat.all().length;
+    const all = filtered();
+
+    if (!total) {
       const ready = AI_built();
       el.flow.innerHTML = `<div class="blank" style="padding:34px 14px 20px">
         <div class="blank__icon">✎</div>
@@ -65,9 +94,56 @@ const ChatView = (() => {
       if (t) t.onclick = () => { el.input.value = t.dataset.demo; autoGrow(); el.input.focus(); };
       return;
     }
+
+    if (!all.length) {
+      el.flow.innerHTML = `<div class="blank" style="padding:34px 14px">
+        <div class="blank__icon">⌕</div>
+        <div class="blank__title">没有匹配的对话</div>
+        <div class="blank__acts"><button class="btn btn--ghost" data-clearfind>清除筛选</button></div>
+      </div>`;
+      const c = el.flow.querySelector('[data-clearfind]');
+      if (c) c.onclick = () => { findQ = ''; findChap = 'all'; syncFind(); renderFlow(); };
+      return;
+    }
+
     el.flow.innerHTML = all.map(msgHTML).join('');
     bindActs();
     scrollEnd();
+  }
+
+  /** 把查找/筛选状态同步到控件 */
+  function syncFind() {
+    el.find.hidden = !findOn;
+    if (el.search) el.search.value = findQ;
+    renderChips();
+  }
+
+  function renderChips() {
+    const all = Store.chat.all();
+    const ids = [...new Set(all.map((m) => m.chapterId).filter(Boolean))];
+    const cnt = (fn) => all.filter(fn).length;
+    const chips = [
+      { k: 'all', t: '全部', n: all.length },
+      { k: 'draft', t: '未写入', n: cnt((m) => !m.clipped && m.role === 'ai') },
+      ...ids.map((id) => {
+        const c = Store.chapter.by(id);
+        return { k: id, t: c ? (c.no + '. ' + c.title) : '未知章', n: cnt((m) => m.chapterId === id) };
+      }),
+    ];
+    el.chips.innerHTML = chips.map((c) =>
+      `<button class="chip-btn ${findChap === c.k ? 'is-on' : ''}" data-fc="${esc(c.k)}">${esc(c.t)}<span class="chip-btn__n">${c.n}</span></button>`
+    ).join('');
+    el.chips.querySelectorAll('[data-fc]').forEach((b) => b.onclick = () => {
+      findChap = b.dataset.fc; syncFind(); renderFlow();
+    });
+  }
+
+  function toggleFind(on) {
+    findOn = on === undefined ? !findOn : !!on;
+    if (!findOn) { findQ = ''; findChap = 'all'; }
+    syncFind();
+    renderFlow();
+    if (findOn && el.search) setTimeout(() => el.search.focus(), 60);
   }
 
   function msgHTML(m) {
@@ -81,7 +157,7 @@ const ChatView = (() => {
       </div>` : (m.clipped ? `<div class="msg__acts"><span class="mini-btn is-on" style="cursor:default">已写入</span></div>` : '');
     return `<div class="msg ${cls}" data-msg="${m.id}">
       <div class="msg__who">${who}</div>
-      <div class="msg__body">${esc(m.text)}</div>
+      <div class="msg__body">${hl(m.text)}</div>
       ${acts}
     </div>`;
   }
@@ -124,7 +200,10 @@ const ChatView = (() => {
   }
 
   function scrollEnd() {
-    requestAnimationFrame(() => { el.flow.scrollTop = el.flow.scrollHeight; });
+    requestAnimationFrame(() => {
+      el.flow.scrollTop = el.flow.scrollHeight;
+      if (el.jump) el.jump.hidden = true;
+    });
   }
 
   /* ── 落盘 ── */
@@ -341,6 +420,10 @@ const ChatView = (() => {
       send: root.querySelector('#btnSend'),
       hint: root.querySelector('#chatHint'),
       target: root.querySelector('#btnTarget'),
+      find: root.querySelector('#chatFind'),
+      search: root.querySelector('#chatSearch'),
+      chips: root.querySelector('#chatChips'),
+      jump: root.querySelector('#btnJumpDown'),
     };
 
     el.input.addEventListener('input', autoGrow);
@@ -354,11 +437,27 @@ const ChatView = (() => {
     root.querySelector('#btnQuickContinue').onclick = () => send('接着往下写，保持同一场景与语气。', 'continue');
     root.querySelector('#btnQuickOutline').onclick = () => send('给这一章列一下要点。', 'outline');
     root.querySelector('#btnContext').onclick = openContext;
+    root.querySelector('#btnFind').onclick = () => toggleFind();
+    if (el.search) {
+      let t = null;
+      el.search.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => { findQ = el.search.value.trim(); renderFlow(); }, 180);
+      });
+    }
     root.querySelector('#btnNewChat').onclick = () => {
       if (!Store.chat.all().length) return;
       if (!confirm('清空当前对话？（已写进章节的内容不受影响）')) return;
       Store.chat.clear(); renderFlow();
     };
+
+    // 不在底部时给「跳到最新」
+    el.flow.addEventListener('scroll', () => {
+      const near = el.flow.scrollHeight - el.flow.scrollTop - el.flow.clientHeight < 90;
+      if (el.jump) el.jump.hidden = near;
+    }, { passive: true });
+    if (el.jump) el.jump.onclick = () => scrollEnd();
+
     el.target.onclick = () => {
       const list = Store.chapter.all();
       if (!list.length) {
@@ -386,9 +485,13 @@ const ChatView = (() => {
     renderFlow();
     renderTarget();
     hint();
+    syncFind();
   }
 
   function refreshAll() { renderTarget(); hint(); renderFlow(); if (ReadView) ReadView.refresh(); }
 
-  return { init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send };
+  return {
+    init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
+    toggleFind, openContext,
+  };
 })();

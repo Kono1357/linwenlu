@@ -322,19 +322,107 @@ const Store = (() => {
   /* ── 整档导入导出 ── */
   function exportJSON() { return JSON.stringify(state, null, 2); }
 
-  function importJSON(text) {
+  /** 只读解析：给导入预览用，不改动现有数据 */
+  function parseArchive(text) {
     let raw;
     try { raw = JSON.parse(text); }
     catch (e) { return { ok: false, reason: 'JSON 解析失败：' + (e.message || e) }; }
-    const before = state;
     try {
-      state = normalize(raw);
+      const inc = normalize(raw);
+      return {
+        ok: true,
+        incoming: inc,
+        counts: {
+          chapters: inc.chapters.length,
+          settings: inc.settings.length,
+          lines: inc.lines.length,
+          chat: inc.chat.length,
+        },
+        title: inc.book.title,
+      };
     } catch (e) {
-      state = before;
       return { ok: false, reason: '数据规格化失败：' + (e.message || e) };
     }
+  }
+
+  /**
+   * 导入存档。
+   * @param {string} text 存档 JSON
+   * @param {{parts?:string[], mode?:'merge'|'replace'}} opts
+   *   parts 默认全选；mode=merge 追加（同名条目跳过），replace 用存档里的替换掉选中的部分
+   */
+  function importJSON(text, opts = {}) {
+    const parsed = parseArchive(text);
+    if (!parsed.ok) return parsed;
+    const inc = parsed.incoming;
+    const parts = Array.isArray(opts.parts) ? opts.parts : ['chapters', 'settings', 'lines', 'chat'];
+    const replace = opts.mode === 'replace';
+    const report = { chapters: 0, settings: 0, lines: 0, chat: 0, skipped: 0 };
+
+    if (parts.includes('chapters')) {
+      if (replace) {
+        state.chapters = inc.chapters;
+        report.chapters = inc.chapters.length;
+      } else {
+        let nextNo = state.chapters.reduce((m, c) => Math.max(m, c.no), 0);
+        inc.chapters.forEach((c) => {
+          nextNo += 1;
+          state.chapters.push({ ...c, id: uid(), no: nextNo });
+          report.chapters += 1;
+        });
+      }
+      state.chapters.sort((a, b) => a.no - b.no);
+    }
+
+    if (parts.includes('settings')) {
+      if (replace) {
+        state.settings = inc.settings;
+        report.settings = inc.settings.length;
+      } else {
+        const seen = new Set(state.settings.map((s) => s.kind + '\u0000' + s.name));
+        inc.settings.forEach((s) => {
+          const k = s.kind + '\u0000' + s.name;
+          if (seen.has(k)) { report.skipped += 1; return; }
+          seen.add(k);
+          state.settings.unshift({ ...s, id: uid() });
+          report.settings += 1;
+        });
+      }
+    }
+
+    if (parts.includes('lines')) {
+      if (replace) {
+        state.lines = inc.lines;
+        report.lines = inc.lines.length;
+      } else {
+        const seen = new Set(state.lines.map((l) => l.name));
+        inc.lines.forEach((l) => {
+          if (seen.has(l.name)) { report.skipped += 1; return; }
+          seen.add(l.name);
+          state.lines.unshift({ ...l, id: uid() });
+          report.lines += 1;
+        });
+      }
+    }
+
+    if (parts.includes('chat')) {
+      if (replace) {
+        state.chat = inc.chat;
+        report.chat = inc.chat.length;
+      } else {
+        const seen = new Set(state.chat.map((m) => m.role + '\u0000' + m.text.slice(0, 80)));
+        inc.chat.forEach((m) => {
+          const k = m.role + '\u0000' + m.text.slice(0, 80);
+          if (seen.has(k)) { report.skipped += 1; return; }
+          seen.add(k);
+          state.chat.push({ ...m, id: uid() });
+          report.chat += 1;
+        });
+      }
+    }
+
     touch('import');
-    return { ok: true, chapters: state.chapters.length, settings: state.settings.length, lines: state.lines.length };
+    return { ok: true, report };
   }
 
   function reset() { state = blank(); touch('reset'); }
@@ -343,7 +431,7 @@ const Store = (() => {
   return {
     load, save, on, get, uid,
     chapter, setting, line, chat, config,
-    exportJSON, importJSON, reset, isPersistFailed,
+    exportJSON, parseArchive, importJSON, reset, isPersistFailed,
     get activeChapterId() { return state && state.__activeChapter || null; },
   };
 })();

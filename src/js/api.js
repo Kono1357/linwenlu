@@ -45,13 +45,30 @@ const AI = (() => {
     // 设定：先相关命中，再按时间补足
     const probe = [ask, c ? Store.chapter.textOf(c) : ''].join('\n');
     const all = st.settings;
-    const hit = all.filter((s) => relevant(probe, s));
-    const rest = all.filter((s) => !hit.includes(s));
+    const people = all.filter((s) => s.kind === '人物');
+
+    // 人物表：整表带上，不受条数限制 —— 这是让 AI 自己把配角写出来的前提
+    if (people.length) {
+      const ranked = people.slice().sort((a, b) => {
+        const ai = relevant(probe, a) ? 0 : 1;
+        const bi = relevant(probe, b) ? 0 : 1;
+        return ai - bi || b.at - a.at;
+      });
+      sections.push({
+        key: 'cast',
+        title: `人物表（共 ${people.length} 人，必须使用这些名字）`,
+        text: ranked.slice(0, 40).map((s) => `· ${s.name}${s.desc ? '：' + cutHead(s.desc, 130) : ''}`).join('\n'),
+      });
+    }
+
+    const rest0 = all.filter((s) => s.kind !== '人物');
+    const hit = rest0.filter((s) => relevant(probe, s));
+    const rest = rest0.filter((s) => !hit.includes(s));
     const picked = hit.concat(rest).slice(0, Math.max(0, cfg.ctxSettings | 0));
     if (picked.length) {
       sections.push({
         key: 'settings',
-        title: `设定（${picked.length}/${all.length}）`,
+        title: `设定（${picked.length}/${rest0.length}）`,
         text: picked.map((s) => `· ${s.name}〔${s.kind}〕${s.desc ? '：' + cutHead(s.desc, 160) : ''}`).join('\n'),
       });
     }
@@ -102,6 +119,9 @@ const AI = (() => {
       `你是长篇小说写作助手，正在协助作者创作《${st.book.title}》。`,
       st.config.style ? `文风要求：${st.config.style}` : '',
       '严格遵守下面提供的设定与世界线，不要自创与设定冲突的内容。',
+      '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
+      '需要有新角色出场时，先从人物表里挑最合适的那个，表里确实没有才新建，',
+      '并且同一个角色前后的称呼必须保持一致，不要用"某个人""一个男人"这类泛称代替已有角色。',
       modeRule,
     ].filter(Boolean).join('\n');
 

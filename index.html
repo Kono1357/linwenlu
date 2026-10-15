@@ -488,6 +488,34 @@ input[type="number"] { font-family: var(--mono); }
 }
 .sec-title:first-child { margin-top: 0; }
 
+/* 设置里的导航行 */
+.navrow {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 13px 2px; border-bottom: 1px solid var(--line);
+  text-align: left; color: var(--ink); font-size: 14px;
+  transition: background .14s;
+}
+.navrow:last-child { border-bottom: none; }
+.navrow:hover { background: var(--bg-3); }
+.navrow__k { flex: 1; }
+.navrow__v {
+  font-size: 12px; color: var(--ink-3); max-width: 48%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.navrow__a { color: var(--ink-3); font-size: 15px; }
+.navrow--danger .navrow__k { color: var(--red); }
+
+/* 导入预览的勾选行 */
+.pickrow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 2px; border-bottom: 1px solid var(--line);
+  font-size: 13.5px; cursor: pointer;
+}
+.pickrow.is-off { opacity: .4; cursor: default; }
+.pickrow input { width: 17px; height: 17px; accent-color: var(--gold); flex: 0 0 auto; }
+.pickrow__k { flex: 1; }
+.pickrow__n { font-size: 12px; color: var(--ink-3); }
+
 /* ─────────── Toast ─────────── */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
@@ -501,10 +529,108 @@ input[type="number"] { font-family: var(--mono); }
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
-/* ─────────── 专注模式 ─────────── */
+/* ─────────── 专注模式：进去必须能出来 ─────────── */
 body.is-stream .tabbar,
 body.is-stream .topbar { display: none; }
-body.is-stream .reader { padding-top: 34px; }
+body.is-stream .reader { padding-top: 42px; }
+body.is-stream .reader__head { display: none; }
+
+.stream-exit {
+  position: fixed; z-index: 70;
+  top: calc(var(--safe-t) + 10px); right: 12px;
+  padding: 7px 14px; border-radius: 20px;
+  background: rgba(35,32,32,.72); color: var(--ink-2);
+  border: 1px solid var(--line-2);
+  font-size: 12.5px; letter-spacing: .02em;
+  backdrop-filter: blur(6px);
+  opacity: .5; transition: opacity .2s, background .15s, color .15s;
+}
+.stream-exit:hover, .stream-exit:active { opacity: 1; background: var(--bg-4); color: var(--ink); }
+
+/* ─────────── 查找 / 筛选条 ─────────── */
+.findbar { padding: 8px 14px 4px; max-width: 780px; width: 100%; margin: 0 auto; }
+.chapfind { padding: 0 12px 8px; }
+.input--sm { padding: 8px 11px; font-size: 13px; border-radius: 9px; }
+
+.chips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip-btn {
+  flex: 0 0 auto; padding: 4px 11px; border-radius: 20px;
+  background: var(--bg-3); border: 1px solid var(--line);
+  color: var(--ink-3); font-size: 12px; white-space: nowrap;
+}
+.chip-btn.is-on { background: var(--gold-dim); color: var(--gold-2); border-color: var(--gold); }
+.chip-btn__n { opacity: .6; margin-left: 4px; font-size: 11px; }
+
+.chat__headActs { display: flex; gap: 6px; }
+
+/* 跳到最新 */
+.jumpdown {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(132px + var(--safe-b)); z-index: 12;
+  padding: 6px 15px; border-radius: 18px;
+  background: rgba(43,39,36,.95); border: 1px solid var(--line-2);
+  color: var(--gold-2); font-size: 12.5px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.5);
+}
+
+/* 命中高亮 */
+.hit { background: #4a3d15; color: var(--gold-2); border-radius: 2px; padding: 0 1px; }
+.msg.is-dim { display: none; }
+
+/* ─────────── 多选管理 ─────────── */
+.world__tools {
+  display: flex; gap: 8px; align-items: center;
+  padding: 0 14px 8px; max-width: 780px; width: 100%; margin: 0 auto;
+}
+.world__tools .input { flex: 1; }
+
+.pickbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 0 14px 10px; padding: 8px 10px;
+  border-radius: var(--r); background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  max-width: 780px;
+}
+.pickbar__count { flex: 1; font-size: 12.5px; color: var(--ink-2); }
+
+.card.is-picked, .line-item.is-picked {
+  border-color: var(--gold); background: #1f1c15;
+}
+.card.is-picked::after {
+  content: '✓'; position: absolute; top: 8px; right: 12px;
+  color: var(--gold-2); font-size: 13px;
+}
+.card { position: relative; }
+.pickbox {
+  position: absolute; top: 12px; right: 12px;
+  width: 17px; height: 17px; border-radius: 5px;
+  border: 1.5px solid var(--line-2); background: var(--bg);
+}
+.card.is-picked .pickbox, .line-item.is-picked .pickbox {
+  background: var(--gold); border-color: var(--gold);
+}
+.card.is-picked .pickbox::after, .line-item.is-picked .pickbox::after {
+  content: ''; position: absolute; left: 5px; top: 1px;
+  width: 4px; height: 9px; border: solid #201c0d;
+  border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+
+/* 按类别折叠 */
+.grouphead {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 2px 6px; cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+.grouphead__t { font-size: 12px; color: var(--ink-2); letter-spacing: .06em; }
+.grouphead__n { font-size: 11px; color: var(--ink-3); }
+.grouphead__arrow { margin-left: auto; color: var(--ink-3); font-size: 11px; transition: transform .18s; }
+.grouphead.is-folded .grouphead__arrow { transform: rotate(-90deg); }
+.card.is-hidden { display: none; }
+
+/* 设置按钮：让「改模型」一眼能找到 */
+.icon-btn--key { color: var(--gold-2); }
 
 /* ─────────── 桌面端 ─────────── */
 @media (min-width: 761px) {
@@ -530,15 +656,19 @@ body.is-stream .reader { padding-top: 34px; }
 
 <!-- ══ 顶栏 ══ -->
 <header class="topbar">
-  <button class="topbar__title" id="btnBook" title="作品设置">
+  <button class="topbar__title" id="btnBook" title="作品信息">
     <span class="topbar__name" id="bookName">临文录</span>
     <span class="topbar__meta" id="bookMeta">未命名作品</span>
   </button>
   <div class="topbar__actions">
     <button class="icon-btn" id="btnStream" title="专注模式">◎</button>
-    <button class="icon-btn" id="btnMenu" title="更多">⋯</button>
+    <button class="icon-btn" id="btnViewAction" title="更多">⋯</button>
+    <button class="icon-btn icon-btn--key" id="btnSettings" title="设置（模型 / 数据）">⚙</button>
   </div>
 </header>
+
+<!-- 专注模式的退出口：必须独立于顶栏，否则进得去出不来 -->
+<button class="stream-exit" id="streamExit" hidden>✕ 退出专注</button>
 
 <!-- ══ 主区：三个模块 ══ -->
 <main class="stage">
@@ -549,6 +679,9 @@ body.is-stream .reader { padding-top: 34px; }
       <div class="pane__head">
         <h2 class="pane__title">剧情</h2>
         <button class="mini-btn" id="btnNewChapter">+ 新章</button>
+      </div>
+      <div class="chapfind">
+        <input class="input input--sm" id="chapterSearch" placeholder="搜章节名 / 正文…">
       </div>
       <div class="chapter-list" id="chapterList"></div>
     </div>
@@ -562,17 +695,13 @@ body.is-stream .reader { padding-top: 34px; }
           <button class="mini-btn" id="btnEditChapter" title="改写正文">✎</button>
         </div>
       </div>
-      <article class="reader" id="reader" tabindex="0">
-        <div class="empty" id="readerEmpty">
-          <p>左边选一章，<br>或者按下面的「提要求」开始写。</p>
-        </div>
-      </article>
+      <article class="reader" id="reader" tabindex="0"></article>
       <div class="selbar" id="selbar" hidden>
-        <span class="selbar__label">选中了 <b id="selCount">0</b> 字</span>
+        <span class="selbar__label">选中 <b id="selCount">0</b> 字</span>
         <button class="mini-btn" data-sel="rewrite">改写</button>
         <button class="mini-btn" data-sel="expand">扩写</button>
         <button class="mini-btn" data-sel="ask">提问</button>
-        <button class="mini-btn" data-sel="setting">存为设定</button>
+        <button class="mini-btn" data-sel="setting">存设定</button>
       </div>
     </div>
   </section>
@@ -584,10 +713,19 @@ body.is-stream .reader { padding-top: 34px; }
         <span class="chat__targetLabel">写作目标</span>
         <button class="chip" id="btnTarget"></button>
       </div>
-      <button class="mini-btn" id="btnContext" title="查看将带入的上下文">上下文</button>
+      <div class="chat__headActs">
+        <button class="mini-btn" id="btnFind" title="在对话里查找">查找</button>
+        <button class="mini-btn" id="btnContext" title="查看将带入的上下文">上下文</button>
+      </div>
+    </div>
+
+    <div class="findbar" id="chatFind" hidden>
+      <input class="input input--sm" id="chatSearch" placeholder="搜对话内容…">
+      <div class="chips" id="chatChips"></div>
     </div>
 
     <div class="chat__flow" id="chatFlow"></div>
+    <button class="jumpdown" id="btnJumpDown" hidden>↓ 最新</button>
 
     <div class="chat__composer">
       <div class="chat__hint" id="chatHint"></div>
@@ -610,6 +748,18 @@ body.is-stream .reader { padding-top: 34px; }
       <button class="seg__btn" data-seg="setting">设定</button>
     </div>
 
+    <div class="world__tools">
+      <input class="input input--sm" id="worldSearch" placeholder="搜索名称 / 说明…">
+      <button class="mini-btn" id="btnWorldPick" title="多选管理">多选</button>
+    </div>
+    <div class="pickbar" id="worldPickbar" hidden>
+      <span class="pickbar__count" id="pickCount">已选 0</span>
+      <button class="mini-btn" id="pickAll">全选</button>
+      <button class="mini-btn" id="pickInvert">反选</button>
+      <button class="mini-btn mini-btn--danger" id="pickDel">删除</button>
+      <button class="mini-btn" id="pickCancel">退出</button>
+    </div>
+
     <div class="world__body" id="worldBody"></div>
 
     <button class="fab" id="btnAddWorld" title="新增">+</button>
@@ -624,7 +774,7 @@ body.is-stream .reader { padding-top: 34px; }
   <button class="tab" data-go="world"><i>◇</i><span>世界线</span></button>
 </nav>
 
-<!-- ══ 抽屉：设置 ══ -->
+<!-- ══ 抽屉 ══ -->
 <div class="sheet" id="sheet" hidden>
   <div class="sheet__mask" data-close></div>
   <div class="sheet__panel">
@@ -965,19 +1115,107 @@ const Store = (() => {
   /* ── 整档导入导出 ── */
   function exportJSON() { return JSON.stringify(state, null, 2); }
 
-  function importJSON(text) {
+  /** 只读解析：给导入预览用，不改动现有数据 */
+  function parseArchive(text) {
     let raw;
     try { raw = JSON.parse(text); }
     catch (e) { return { ok: false, reason: 'JSON 解析失败：' + (e.message || e) }; }
-    const before = state;
     try {
-      state = normalize(raw);
+      const inc = normalize(raw);
+      return {
+        ok: true,
+        incoming: inc,
+        counts: {
+          chapters: inc.chapters.length,
+          settings: inc.settings.length,
+          lines: inc.lines.length,
+          chat: inc.chat.length,
+        },
+        title: inc.book.title,
+      };
     } catch (e) {
-      state = before;
       return { ok: false, reason: '数据规格化失败：' + (e.message || e) };
     }
+  }
+
+  /**
+   * 导入存档。
+   * @param {string} text 存档 JSON
+   * @param {{parts?:string[], mode?:'merge'|'replace'}} opts
+   *   parts 默认全选；mode=merge 追加（同名条目跳过），replace 用存档里的替换掉选中的部分
+   */
+  function importJSON(text, opts = {}) {
+    const parsed = parseArchive(text);
+    if (!parsed.ok) return parsed;
+    const inc = parsed.incoming;
+    const parts = Array.isArray(opts.parts) ? opts.parts : ['chapters', 'settings', 'lines', 'chat'];
+    const replace = opts.mode === 'replace';
+    const report = { chapters: 0, settings: 0, lines: 0, chat: 0, skipped: 0 };
+
+    if (parts.includes('chapters')) {
+      if (replace) {
+        state.chapters = inc.chapters;
+        report.chapters = inc.chapters.length;
+      } else {
+        let nextNo = state.chapters.reduce((m, c) => Math.max(m, c.no), 0);
+        inc.chapters.forEach((c) => {
+          nextNo += 1;
+          state.chapters.push({ ...c, id: uid(), no: nextNo });
+          report.chapters += 1;
+        });
+      }
+      state.chapters.sort((a, b) => a.no - b.no);
+    }
+
+    if (parts.includes('settings')) {
+      if (replace) {
+        state.settings = inc.settings;
+        report.settings = inc.settings.length;
+      } else {
+        const seen = new Set(state.settings.map((s) => s.kind + '\u0000' + s.name));
+        inc.settings.forEach((s) => {
+          const k = s.kind + '\u0000' + s.name;
+          if (seen.has(k)) { report.skipped += 1; return; }
+          seen.add(k);
+          state.settings.unshift({ ...s, id: uid() });
+          report.settings += 1;
+        });
+      }
+    }
+
+    if (parts.includes('lines')) {
+      if (replace) {
+        state.lines = inc.lines;
+        report.lines = inc.lines.length;
+      } else {
+        const seen = new Set(state.lines.map((l) => l.name));
+        inc.lines.forEach((l) => {
+          if (seen.has(l.name)) { report.skipped += 1; return; }
+          seen.add(l.name);
+          state.lines.unshift({ ...l, id: uid() });
+          report.lines += 1;
+        });
+      }
+    }
+
+    if (parts.includes('chat')) {
+      if (replace) {
+        state.chat = inc.chat;
+        report.chat = inc.chat.length;
+      } else {
+        const seen = new Set(state.chat.map((m) => m.role + '\u0000' + m.text.slice(0, 80)));
+        inc.chat.forEach((m) => {
+          const k = m.role + '\u0000' + m.text.slice(0, 80);
+          if (seen.has(k)) { report.skipped += 1; return; }
+          seen.add(k);
+          state.chat.push({ ...m, id: uid() });
+          report.chat += 1;
+        });
+      }
+    }
+
     touch('import');
-    return { ok: true, chapters: state.chapters.length, settings: state.settings.length, lines: state.lines.length };
+    return { ok: true, report };
   }
 
   function reset() { state = blank(); touch('reset'); }
@@ -986,7 +1224,7 @@ const Store = (() => {
   return {
     load, save, on, get, uid,
     chapter, setting, line, chat, config,
-    exportJSON, importJSON, reset, isPersistFailed,
+    exportJSON, parseArchive, importJSON, reset, isPersistFailed,
     get activeChapterId() { return state && state.__activeChapter || null; },
   };
 })();
@@ -1039,13 +1277,30 @@ const AI = (() => {
     // 设定：先相关命中，再按时间补足
     const probe = [ask, c ? Store.chapter.textOf(c) : ''].join('\n');
     const all = st.settings;
-    const hit = all.filter((s) => relevant(probe, s));
-    const rest = all.filter((s) => !hit.includes(s));
+    const people = all.filter((s) => s.kind === '人物');
+
+    // 人物表：整表带上，不受条数限制 —— 这是让 AI 自己把配角写出来的前提
+    if (people.length) {
+      const ranked = people.slice().sort((a, b) => {
+        const ai = relevant(probe, a) ? 0 : 1;
+        const bi = relevant(probe, b) ? 0 : 1;
+        return ai - bi || b.at - a.at;
+      });
+      sections.push({
+        key: 'cast',
+        title: `人物表（共 ${people.length} 人，必须使用这些名字）`,
+        text: ranked.slice(0, 40).map((s) => `· ${s.name}${s.desc ? '：' + cutHead(s.desc, 130) : ''}`).join('\n'),
+      });
+    }
+
+    const rest0 = all.filter((s) => s.kind !== '人物');
+    const hit = rest0.filter((s) => relevant(probe, s));
+    const rest = rest0.filter((s) => !hit.includes(s));
     const picked = hit.concat(rest).slice(0, Math.max(0, cfg.ctxSettings | 0));
     if (picked.length) {
       sections.push({
         key: 'settings',
-        title: `设定（${picked.length}/${all.length}）`,
+        title: `设定（${picked.length}/${rest0.length}）`,
         text: picked.map((s) => `· ${s.name}〔${s.kind}〕${s.desc ? '：' + cutHead(s.desc, 160) : ''}`).join('\n'),
       });
     }
@@ -1096,6 +1351,9 @@ const AI = (() => {
       `你是长篇小说写作助手，正在协助作者创作《${st.book.title}》。`,
       st.config.style ? `文风要求：${st.config.style}` : '',
       '严格遵守下面提供的设定与世界线，不要自创与设定冲突的内容。',
+      '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
+      '需要有新角色出场时，先从人物表里挑最合适的那个，表里确实没有才新建，',
+      '并且同一个角色前后的称呼必须保持一致，不要用"某个人""一个男人"这类泛称代替已有角色。',
       modeRule,
     ].filter(Boolean).join('\n');
 
@@ -1226,6 +1484,7 @@ const AI = (() => {
 const ReadView = (() => {
   let el = {};
   let selText = '';
+  let chapQ = '';
 
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1254,9 +1513,17 @@ const ReadView = (() => {
   }
 
   function renderList() {
-    const list = Store.chapter.all();
+    const all = Store.chapter.all();
     const cur = Store.activeChapterId;
-    if (!list.length) {
+
+    let list = all;
+    if (chapQ) {
+      const q = chapQ.toLowerCase();
+      list = all.filter((c) =>
+        c.title.toLowerCase().includes(q) || Store.chapter.textOf(c).toLowerCase().includes(q));
+    }
+
+    if (!all.length) {
       el.list.innerHTML = `<div class="blank" style="padding:36px 14px 24px">
         <div class="blank__icon">✎</div>
         <div class="blank__title">还没有章节</div>
@@ -1275,6 +1542,19 @@ const ReadView = (() => {
       el.list.querySelector('[data-goto-chat]').onclick = () => App.go('chat');
       return;
     }
+
+    if (!list.length) {
+      el.list.innerHTML = `<div class="blank" style="padding:36px 14px">
+        <div class="blank__icon">⌕</div>
+        <div class="blank__title">没有匹配的章节</div>
+        <div class="blank__acts"><button class="btn btn--ghost" data-clearq>清除搜索</button></div>
+      </div>`;
+      el.list.querySelector('[data-clearq]').onclick = () => {
+        chapQ = ''; if (el.search) el.search.value = ''; renderList();
+      };
+      return;
+    }
+
     el.list.innerHTML = list.map((c) => {
       const has = c.drafts.length > 0;
       const n = c.drafts.length;
@@ -1429,8 +1709,14 @@ const ReadView = (() => {
       ver: root.querySelector('#verBadge'),
       selbar: root.querySelector('#selbar'),
       selCount: root.querySelector('#selCount'),
+      search: root.querySelector('#chapterSearch'),
     };
 
+    let st = null;
+    if (el.search) el.search.addEventListener('input', () => {
+      clearTimeout(st);
+      st = setTimeout(() => { chapQ = el.search.value.trim(); renderList(); }, 170);
+    });
     el.list.addEventListener('click', (e) => {
       const b = e.target.closest('[data-ch]');
       if (!b) return;
@@ -1496,7 +1782,7 @@ const ReadView = (() => {
     el.reader.addEventListener('scroll', () => { if (!el.selbar.hidden) clearSelection(); }, { passive: true });
   }
 
-  return { init, refresh, renderList, renderReader, openEditor, clearSelection };
+  return { init, refresh, renderList, renderReader, openEditor, openVersions, clearSelection };
 })();
 
 /* ─── js/chat.js ─── */
@@ -1511,8 +1797,35 @@ const ChatView = (() => {
   let abort = null;
   let pendingExtra = null;   // { action, text } 来自「看剧情」的选中操作
 
+  // 查找 / 筛选状态
+  let findOn = false;
+  let findQ = '';
+  let findChap = 'all';      // 'all' | 'draft'（未写入）| chapterId
+
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  /** 命中高亮（先转义再包） */
+  function hl(text) {
+    const e = esc(text);
+    if (!findQ) return e;
+    try {
+      const re = new RegExp(findQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      return e.replace(re, (m) => `<span class="hit">${m}</span>`);
+    } catch (_) { return e; }
+  }
+
+  /** 当前筛选下的消息 */
+  function filtered() {
+    let all = Store.chat.all();
+    if (findChap === 'draft') all = all.filter((m) => !m.clipped && m.role === 'ai');
+    else if (findChap !== 'all') all = all.filter((m) => m.chapterId === findChap);
+    if (findQ) {
+      const q = findQ.toLowerCase();
+      all = all.filter((m) => m.text.toLowerCase().includes(q));
+    }
+    return all;
+  }
 
   /* ── 目标章 ── */
   function target() {
@@ -1542,8 +1855,10 @@ const ChatView = (() => {
 
   /* ── 对话渲染 ── */
   function renderFlow() {
-    const all = Store.chat.all();
-    if (!all.length) {
+    const total = Store.chat.all().length;
+    const all = filtered();
+
+    if (!total) {
       const ready = AI_built();
       el.flow.innerHTML = `<div class="blank" style="padding:34px 14px 20px">
         <div class="blank__icon">✎</div>
@@ -1567,9 +1882,56 @@ const ChatView = (() => {
       if (t) t.onclick = () => { el.input.value = t.dataset.demo; autoGrow(); el.input.focus(); };
       return;
     }
+
+    if (!all.length) {
+      el.flow.innerHTML = `<div class="blank" style="padding:34px 14px">
+        <div class="blank__icon">⌕</div>
+        <div class="blank__title">没有匹配的对话</div>
+        <div class="blank__acts"><button class="btn btn--ghost" data-clearfind>清除筛选</button></div>
+      </div>`;
+      const c = el.flow.querySelector('[data-clearfind]');
+      if (c) c.onclick = () => { findQ = ''; findChap = 'all'; syncFind(); renderFlow(); };
+      return;
+    }
+
     el.flow.innerHTML = all.map(msgHTML).join('');
     bindActs();
     scrollEnd();
+  }
+
+  /** 把查找/筛选状态同步到控件 */
+  function syncFind() {
+    el.find.hidden = !findOn;
+    if (el.search) el.search.value = findQ;
+    renderChips();
+  }
+
+  function renderChips() {
+    const all = Store.chat.all();
+    const ids = [...new Set(all.map((m) => m.chapterId).filter(Boolean))];
+    const cnt = (fn) => all.filter(fn).length;
+    const chips = [
+      { k: 'all', t: '全部', n: all.length },
+      { k: 'draft', t: '未写入', n: cnt((m) => !m.clipped && m.role === 'ai') },
+      ...ids.map((id) => {
+        const c = Store.chapter.by(id);
+        return { k: id, t: c ? (c.no + '. ' + c.title) : '未知章', n: cnt((m) => m.chapterId === id) };
+      }),
+    ];
+    el.chips.innerHTML = chips.map((c) =>
+      `<button class="chip-btn ${findChap === c.k ? 'is-on' : ''}" data-fc="${esc(c.k)}">${esc(c.t)}<span class="chip-btn__n">${c.n}</span></button>`
+    ).join('');
+    el.chips.querySelectorAll('[data-fc]').forEach((b) => b.onclick = () => {
+      findChap = b.dataset.fc; syncFind(); renderFlow();
+    });
+  }
+
+  function toggleFind(on) {
+    findOn = on === undefined ? !findOn : !!on;
+    if (!findOn) { findQ = ''; findChap = 'all'; }
+    syncFind();
+    renderFlow();
+    if (findOn && el.search) setTimeout(() => el.search.focus(), 60);
   }
 
   function msgHTML(m) {
@@ -1583,7 +1945,7 @@ const ChatView = (() => {
       </div>` : (m.clipped ? `<div class="msg__acts"><span class="mini-btn is-on" style="cursor:default">已写入</span></div>` : '');
     return `<div class="msg ${cls}" data-msg="${m.id}">
       <div class="msg__who">${who}</div>
-      <div class="msg__body">${esc(m.text)}</div>
+      <div class="msg__body">${hl(m.text)}</div>
       ${acts}
     </div>`;
   }
@@ -1626,7 +1988,10 @@ const ChatView = (() => {
   }
 
   function scrollEnd() {
-    requestAnimationFrame(() => { el.flow.scrollTop = el.flow.scrollHeight; });
+    requestAnimationFrame(() => {
+      el.flow.scrollTop = el.flow.scrollHeight;
+      if (el.jump) el.jump.hidden = true;
+    });
   }
 
   /* ── 落盘 ── */
@@ -1843,6 +2208,10 @@ const ChatView = (() => {
       send: root.querySelector('#btnSend'),
       hint: root.querySelector('#chatHint'),
       target: root.querySelector('#btnTarget'),
+      find: root.querySelector('#chatFind'),
+      search: root.querySelector('#chatSearch'),
+      chips: root.querySelector('#chatChips'),
+      jump: root.querySelector('#btnJumpDown'),
     };
 
     el.input.addEventListener('input', autoGrow);
@@ -1856,11 +2225,27 @@ const ChatView = (() => {
     root.querySelector('#btnQuickContinue').onclick = () => send('接着往下写，保持同一场景与语气。', 'continue');
     root.querySelector('#btnQuickOutline').onclick = () => send('给这一章列一下要点。', 'outline');
     root.querySelector('#btnContext').onclick = openContext;
+    root.querySelector('#btnFind').onclick = () => toggleFind();
+    if (el.search) {
+      let t = null;
+      el.search.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => { findQ = el.search.value.trim(); renderFlow(); }, 180);
+      });
+    }
     root.querySelector('#btnNewChat').onclick = () => {
       if (!Store.chat.all().length) return;
       if (!confirm('清空当前对话？（已写进章节的内容不受影响）')) return;
       Store.chat.clear(); renderFlow();
     };
+
+    // 不在底部时给「跳到最新」
+    el.flow.addEventListener('scroll', () => {
+      const near = el.flow.scrollHeight - el.flow.scrollTop - el.flow.clientHeight < 90;
+      if (el.jump) el.jump.hidden = near;
+    }, { passive: true });
+    if (el.jump) el.jump.onclick = () => scrollEnd();
+
     el.target.onclick = () => {
       const list = Store.chapter.all();
       if (!list.length) {
@@ -1888,38 +2273,58 @@ const ChatView = (() => {
     renderFlow();
     renderTarget();
     hint();
+    syncFind();
   }
 
   function refreshAll() { renderTarget(); hint(); renderFlow(); if (ReadView) ReadView.refresh(); }
 
-  return { init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send };
+  return {
+    init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
+    toggleFind, openContext,
+  };
 })();
 
 /* ─── js/world.js ─── */
 /* ════════════════════════════════════════════
    临文录 · 模块三：世界线与设定
    世界线 = 剧情脉络（可收束）；设定 = 人/地/物/规则
+   条目一多就要能搜、能折、能批量收拾
    ════════════════════════════════════════════ */
 
 const WorldView = (() => {
   let el = {};
   let seg = 'line';
   let filter = '';
+  let pickMode = false;
+  const picked = new Set();
+  const folded = new Set();
 
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+  const match = (o) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return (o.name + ' ' + o.desc + ' ' + (o.kind || '') + ' ' + (o.at || '')).toLowerCase().includes(q);
+  };
+
   function render() {
     el.seg.querySelectorAll('.seg__btn').forEach((b) => b.classList.toggle('is-on', b.dataset.seg === seg));
     el.body.innerHTML = seg === 'line' ? lineHTML() : settingHTML();
+    el.pickbar.hidden = !pickMode;
+    if (el.pickBtn) el.pickBtn.classList.toggle('is-on', pickMode);
+    updatePickCount();
     bind();
+  }
+
+  function updatePickCount() {
+    if (el.pickCount) el.pickCount.textContent = `已选 ${picked.size}`;
   }
 
   /* ── 世界线 ── */
   function lineHTML() {
-    let list = Store.line.all();
-    if (filter) list = list.filter((l) => (l.name + l.desc + l.at).includes(filter));
-    if (!list.length) {
+    const list = Store.line.all().filter(match);
+    if (!Store.line.all().length) {
       return `<div class="blank">
         <div class="blank__icon">◇</div>
         <div class="blank__title">还没有世界线</div>
@@ -1928,62 +2333,80 @@ const WorldView = (() => {
           它们会自动进入每次生成的上下文，<br>
           让 AI 不会写着写着就跑偏。
         </div>
-        <div class="blank__acts">
-          <button class="btn" data-add>添加第一条</button>
-        </div>
+        <div class="blank__acts"><button class="btn" data-add>添加第一条</button></div>
       </div>`;
     }
-    return list.map((l) => `
-      <div class="line-item ${l.status === '已收束' ? 'is-closed' : ''}" data-line="${l.id}">
+    if (!list.length) return noMatchHTML();
+    return list.map((l) => {
+      const on = picked.has(l.id);
+      return `<div class="line-item ${l.status === '已收束' ? 'is-closed' : ''} ${on ? 'is-picked' : ''}" data-line="${l.id}">
         <div class="line-item__hd">
           <span class="line-item__name">${esc(l.name)}</span>
           ${l.at ? `<span class="line-item__at">${esc(l.at)}</span>` : ''}
+          ${pickMode ? '<span class="pickbox" style="position:static;margin-left:auto"></span>' : `
           <span class="card__acts">
             <button class="mini-btn" data-ltog="${l.id}">${l.status === '已收束' ? '重启' : '收束'}</button>
             <button class="mini-btn" data-ledit="${l.id}">改</button>
-          </span>
+          </span>`}
         </div>
         ${l.desc ? `<div class="line-item__desc">${esc(l.desc)}</div>` : ''}
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
 
   /* ── 设定 ── */
+  function cardHTML(s, isFolded) {
+    const on = picked.has(s.id);
+    return `<div class="card ${on ? 'is-picked' : ''} ${isFolded ? 'is-hidden' : ''}" data-set="${s.id}">
+      ${pickMode ? '<span class="pickbox"></span>' : ''}
+      <div class="card__top">
+        <span class="card__name">${esc(s.name)}</span>
+        <span class="card__kind" data-k="${esc(s.kind)}">${esc(s.kind)}</span>
+      </div>
+      ${s.desc ? `<div class="card__desc">${esc(s.desc)}</div>` : ''}
+      <div class="card__meta">
+        <span>${new Date(s.at).toLocaleDateString('zh-CN')}</span>
+        ${pickMode ? '' : `<span class="card__acts"><button class="mini-btn" data-sedit="${s.id}">改</button></span>`}
+      </div>
+    </div>`;
+  }
+
   function settingHTML() {
-    let list = Store.setting.all();
-    if (filter) list = list.filter((s) => (s.name + s.desc + s.kind).includes(filter));
-    if (!list.length) {
+    const all = Store.setting.all();
+    if (!all.length) {
       return `<div class="blank">
         <div class="blank__icon">◆</div>
         <div class="blank__title">还没有设定</div>
         <div class="blank__desc">
           人物、地点、物件、规则都放这儿。<br>
-          写作时按相关性自动挑几条带进去，<br>
-          不用每次都重复交代。
+          <b>人物会整表带进每次生成</b>，这样 AI 就会自己用上配角名字，<br>
+          不用每次重新交代。
         </div>
-        <div class="blank__acts">
-          <button class="btn" data-add>添加第一条</button>
-        </div>
+        <div class="blank__acts"><button class="btn" data-add>添加第一条</button></div>
       </div>`;
     }
+    const list = all.filter(match);
+    if (!list.length) return noMatchHTML();
+
     const byKind = {};
     list.forEach((s) => { (byKind[s.kind] = byKind[s.kind] || []).push(s); });
-    return Object.keys(byKind).map((k) => `
-      <div class="sec-title">${esc(k)} · ${byKind[k].length}</div>
-      ${byKind[k].map((s) => `
-        <div class="card" data-set="${s.id}">
-          <div class="card__top">
-            <span class="card__name">${esc(s.name)}</span>
-            <span class="card__kind" data-k="${esc(s.kind)}">${esc(s.kind)}</span>
-          </div>
-          ${s.desc ? `<div class="card__desc">${esc(s.desc)}</div>` : ''}
-          <div class="card__meta">
-            <span>${new Date(s.at).toLocaleDateString('zh-CN')}</span>
-            <span class="card__acts">
-              <button class="mini-btn" data-sedit="${s.id}">改</button>
-            </span>
-          </div>
-        </div>`).join('')}
-    `).join('');
+    return Object.keys(byKind).map((k) => {
+      const isFolded = folded.has(k);
+      return `<div class="grouphead ${isFolded ? 'is-folded' : ''}" data-fold="${esc(k)}">
+          <span class="grouphead__t">${esc(k)}</span>
+          <span class="grouphead__n">${byKind[k].length}</span>
+          <span class="grouphead__arrow">▼</span>
+        </div>
+        ${byKind[k].map((s) => cardHTML(s, isFolded)).join('')}`;
+    }).join('');
+  }
+
+  function noMatchHTML() {
+    return `<div class="blank" style="padding:40px 14px">
+      <div class="blank__icon">⌕</div>
+      <div class="blank__title">没有匹配「${esc(filter)}」的条目</div>
+      <div class="blank__acts"><button class="btn btn--ghost" data-clearfilter>清除搜索</button></div>
+    </div>`;
   }
 
   /* ── 编辑面板 ── */
@@ -2033,10 +2456,11 @@ const WorldView = (() => {
         <select class="select" id="stKind">
           ${['人物', '地点', '物件', '规则', '设定'].map((k) => `<option ${s && s.kind === k ? 'selected' : ''}>${k}</option>`).join('')}
         </select>
+        <div class="field__hint">选「人物」的条目会整表进入每次生成，让 AI 自己把配角写出来。</div>
       </div>
       <div class="field">
         <label class="field__label">说明</label>
-        <textarea class="textarea" id="stDesc" placeholder="越具体越好：外貌、脾气、口癖、限制条件">${esc(s ? s.desc : '')}</textarea>
+        <textarea class="textarea" id="stDesc" placeholder="越具体越好：外貌、脾气、口癖、和主角的关系">${esc(s ? s.desc : '')}</textarea>
       </div>
       <button class="btn" id="stSave">${s ? '保存' : '添加'}</button>
       ${s ? '<button class="btn btn--danger" id="stDel" style="margin-top:8px">删除</button>' : ''}
@@ -2057,10 +2481,30 @@ const WorldView = (() => {
     });
   }
 
+  /* ── 多选 ── */
+  function setPick(on) {
+    pickMode = !!on;
+    if (!pickMode) picked.clear();
+    render();
+    if (pickMode) App.toast('点条目选中，底部可批量删');
+  }
+
+  function currentList() {
+    return seg === 'line' ? Store.line.all().filter(match) : Store.setting.all().filter(match);
+  }
+
   function bind() {
-    el.body.querySelectorAll('[data-add]').forEach((b) => b.onclick = () => {
-      seg === 'line' ? editLine(null) : editSetting(null);
+    el.body.querySelectorAll('[data-add]').forEach((b) => b.onclick = () =>
+      (seg === 'line' ? editLine(null) : editSetting(null)));
+    el.body.querySelectorAll('[data-clearfilter]').forEach((b) => b.onclick = () => {
+      filter = ''; if (el.search) el.search.value = ''; render();
     });
+    el.body.querySelectorAll('[data-fold]').forEach((g) => g.onclick = () => {
+      const k = g.dataset.fold;
+      folded.has(k) ? folded.delete(k) : folded.add(k);
+      render();
+    });
+
     el.body.querySelectorAll('[data-ltog]').forEach((b) => b.onclick = (e) => {
       e.stopPropagation(); Store.line.toggle(b.dataset.ltog); render();
     });
@@ -2070,22 +2514,66 @@ const WorldView = (() => {
     el.body.querySelectorAll('[data-sedit]').forEach((b) => b.onclick = (e) => {
       e.stopPropagation(); editSetting(b.dataset.sedit);
     });
-    el.body.querySelectorAll('[data-line]').forEach((n) => n.onclick = () => editLine(n.dataset.line));
-    el.body.querySelectorAll('[data-set]').forEach((n) => n.onclick = () => editSetting(n.dataset.set));
+
+    el.body.querySelectorAll('[data-line]').forEach((n) => n.onclick = () => {
+      const id = n.dataset.line;
+      if (pickMode) { picked.has(id) ? picked.delete(id) : picked.add(id); render(); return; }
+      editLine(id);
+    });
+    el.body.querySelectorAll('[data-set]').forEach((n) => n.onclick = () => {
+      const id = n.dataset.set;
+      if (pickMode) { picked.has(id) ? picked.delete(id) : picked.add(id); render(); return; }
+      editSetting(id);
+    });
   }
 
   function init(root) {
-    el = { seg: root.querySelector('#worldSeg'), body: root.querySelector('#worldBody') };
+    el = {
+      seg: root.querySelector('#worldSeg'),
+      body: root.querySelector('#worldBody'),
+      search: root.querySelector('#worldSearch'),
+      pickbar: root.querySelector('#worldPickbar'),
+      pickCount: root.querySelector('#pickCount'),
+      pickBtn: root.querySelector('#btnWorldPick'),
+    };
+
     el.seg.addEventListener('click', (e) => {
       const b = e.target.closest('[data-seg]');
       if (!b) return;
-      seg = b.dataset.seg; render();
+      seg = b.dataset.seg;
+      picked.clear();
+      render();
     });
+
+    let t = null;
+    el.search.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => { filter = el.search.value.trim(); render(); }, 160);
+    });
+
+    el.pickBtn.onclick = () => setPick(!pickMode);
+    root.querySelector('#pickAll').onclick = () => {
+      currentList().forEach((o) => picked.add(o.id)); render();
+    };
+    root.querySelector('#pickInvert').onclick = () => {
+      currentList().forEach((o) => picked.has(o.id) ? picked.delete(o.id) : picked.add(o.id)); render();
+    };
+    root.querySelector('#pickDel').onclick = () => {
+      if (!picked.size) return App.toast('还没选东西');
+      if (!confirm(`删除选中的 ${picked.size} 条？不可撤销。`)) return;
+      const n = picked.size;
+      [...picked].forEach((id) => (seg === 'line' ? Store.line.remove(id) : Store.setting.remove(id)));
+      picked.clear();
+      render();
+      App.toast(`已删除 ${n} 条`);
+    };
+    root.querySelector('#pickCancel').onclick = () => setPick(false);
+
     root.querySelector('#btnAddWorld').onclick = () => (seg === 'line' ? editLine(null) : editSetting(null));
     render();
   }
 
-  return { init, render };
+  return { init, render, setPick };
 })();
 
 /* ─── js/app.js ─── */
@@ -2110,9 +2598,23 @@ const App = (() => {
     Object.entries(map).forEach(([k, node]) => { node.hidden = k !== name; });
     el.tabbar.querySelectorAll('.tab').forEach((t) => t.classList.toggle('is-on', t.dataset.go === name));
     if (name !== 'read') document.body.classList.remove('is-reading');
+    if (name !== 'read' && document.body.classList.contains('is-stream')) setStream(false);
     if (name === 'chat' && ChatView) ChatView.refreshAll();
     if (name === 'world' && WorldView) WorldView.render();
     if (name === 'read' && ReadView) ReadView.refresh();
+  }
+
+  /* ── 专注模式：进去必须能出来 ── */
+  function setStream(on) {
+    document.body.classList.toggle('is-stream', !!on);
+    const ex = document.getElementById('streamExit');
+    if (ex) ex.hidden = !on;
+    if (on) {
+      if (cur !== 'read') go('read');
+      if (!Store.chapter.active()) { toast('先进一章再开专注', 2400); setStream(false); return; }
+      document.body.classList.add('is-reading');
+      ReadView.clearSelection();
+    }
   }
 
   /* ── Toast ── */
@@ -2245,19 +2747,22 @@ const App = (() => {
   }
 
   /* ── 设置：数据 ── */
-  function openDataSettings() {
+  function openDataSettings(anchor) {
     sheet('数据', `
       <button class="btn" id="dExp">导出存档（.json）</button>
-      <button class="btn btn--ghost" id="dImp" style="margin-top:8px">导入存档</button>
+      <button class="btn btn--ghost" id="dImp" style="margin-top:8px">导入存档…</button>
       <input type="file" id="dFile" accept=".json,application/json" hidden>
-      <div class="sec-title">正文</div>
+
+      <div class="sec-title" id="secText">正文</div>
       <button class="btn btn--ghost" id="dMd">导出正文（.md）</button>
       <button class="btn btn--ghost" id="dTxt" style="margin-top:8px">导入正文（.txt / .md，自动按章切分）</button>
       <input type="file" id="dTxtFile" accept=".txt,.md,text/plain,text/markdown" hidden>
       <div class="field__hint" style="margin-top:10px">
-        导入时会识别「第N章 / 第N回 / 第N节」这类行作为分章标题，切不开就整篇作为一章。
+        导入时识别「第N章 / 第N回 / 第N节」这类行作为分章标题，切不开就整篇作为一章。
       </div>
-      <button class="btn btn--danger" id="dReset" style="margin-top:22px">清空全部数据</button>
+
+      <div class="sec-title">危险操作</div>
+      <button class="btn btn--danger" id="dReset">清空全部数据</button>
       <div class="field__hint" style="margin-top:14px">
         数据存在这台设备的浏览器里。换设备、换浏览器、清理缓存都会丢，<b>重要内容请定期导出</b>。
       </div>
@@ -2279,21 +2784,10 @@ const App = (() => {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
         const rd = new FileReader();
-        rd.onload = () => {
-          const res = Store.importJSON(String(rd.result || ''));
-          if (!res.ok) return toast('导入失败：' + res.reason, 3200);
-          closeSheet(); renderAll();
-          toast(`已导入：${res.chapters} 章 / ${res.settings} 设定 / ${res.lines} 世界线`, 2600);
-        };
+        rd.onload = () => openImportPreview(String(rd.result || ''), f.name);
         rd.readAsText(f, 'utf-8');
       };
-      r.querySelector('#dMd').onclick = () => {
-        const st = Store.get();
-        const md = [`# ${st.book.title}`, st.book.genre ? `> ${st.book.genre}` : '', '']
-          .concat(st.chapters.map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
-        download((st.book.title || '临文录') + '.md', md, 'text/markdown');
-        toast('已导出正文');
-      };
+      r.querySelector('#dMd').onclick = () => { exportText(); };
       r.querySelector('#dTxt').onclick = () => r.querySelector('#dTxtFile').click();
       r.querySelector('#dTxtFile').onchange = (e) => {
         const f = e.target.files && e.target.files[0];
@@ -2309,7 +2803,59 @@ const App = (() => {
       r.querySelector('#dReset').onclick = () => {
         if (!confirm('清空全部数据？这会删掉所有章节、设定和对话，且不可恢复。')) return;
         if (!confirm('真的确定？建议先导出存档。')) return;
-        Store.reset(); Store.load && null; closeSheet(); renderAll(); toast('已清空');
+        Store.reset(); closeSheet(); renderAll(); toast('已清空');
+      };
+      if (anchor === 'text') {
+        const s = r.querySelector('#secText');
+        if (s) s.scrollIntoView({ block: 'start' });
+      }
+    });
+  }
+
+  /* ── 导入预览：先看清楚，再决定要哪些、怎么合 ── */
+  function openImportPreview(text, filename) {
+    const p = Store.parseArchive(text);
+    if (!p.ok) return toast('导入失败：' + p.reason, 3400);
+    const n = p.counts;
+    const row = (key, label, num) => `
+      <label class="pickrow ${num ? '' : 'is-off'}">
+        <input type="checkbox" data-part="${key}" ${num ? 'checked' : 'disabled'}>
+        <span class="pickrow__k">${label}</span>
+        <span class="pickrow__n">${num}</span>
+      </label>`;
+    sheet('导入预览', `
+      <div class="field__hint" style="margin-bottom:12px">
+        文件：${esc(filename || '（未命名）')}<br>
+        作品：<b>${esc(p.title)}</b>
+      </div>
+      <div class="sec-title">要导入哪些</div>
+      ${row('chapters', '章节', n.chapters)}
+      ${row('settings', '设定', n.settings)}
+      ${row('lines', '世界线', n.lines)}
+      ${row('chat', '对话记录', n.chat)}
+      <div class="sec-title">怎么合</div>
+      <label class="pickrow">
+        <input type="radio" name="imode" value="merge" checked>
+        <span class="pickrow__k">合并</span>
+        <span class="pickrow__n" style="font-size:11px">同名条目跳过，其他追加</span>
+      </label>
+      <label class="pickrow">
+        <input type="radio" name="imode" value="replace">
+        <span class="pickrow__k">替换</span>
+        <span class="pickrow__n" style="font-size:11px">用文件里的覆盖所选部分</span>
+      </label>
+      <button class="btn" id="ipGo" style="margin-top:18px">开始导入</button>
+    `, (r) => {
+      r.querySelector('#ipGo').onclick = () => {
+        const parts = [...r.querySelectorAll('[data-part]:checked')].map((x) => x.dataset.part);
+        if (!parts.length) return toast('至少选一项');
+        const mode = (r.querySelector('input[name="imode"]:checked') || {}).value || 'merge';
+        const res = Store.importJSON(text, { parts, mode });
+        if (!res.ok) return toast('导入失败：' + res.reason, 3400);
+        const g = res.report;
+        closeSheet(); renderAll();
+        toast(`已导入 章节${g.chapters} · 设定${g.settings} · 世界线${g.lines} · 对话${g.chat}` +
+          (g.skipped ? `（跳过重复 ${g.skipped}）` : ''), 3200);
       };
     });
   }
@@ -2367,22 +2913,107 @@ const App = (() => {
     el.bookMeta.textContent = parts.join(' · ');
   }
 
-  /* ── 更多菜单 ── */
-  function openMenu() {
-    sheet('菜单', `
-      <button class="btn btn--ghost" id="mModel">模型设置</button>
-      <button class="btn btn--ghost" id="mBook" style="margin-top:8px">作品信息</button>
-      <button class="btn btn--ghost" id="mData" style="margin-top:8px">数据与导出</button>
+  /* ── 设置中心：⚙ 一键直达，改模型不用翻 ── */
+  function openSettings() {
+    const ready = Store.config.ready();
+    sheet('设置', `
+      <button class="navrow" id="mModel">
+        <span class="navrow__k">模型设置</span>
+        <span class="navrow__v">${ready ? esc(Store.get().config.model) : '<span style="color:var(--red)">还没配</span>'}</span>
+        <span class="navrow__a">›</span>
+      </button>
+      <button class="navrow" id="mBook">
+        <span class="navrow__k">作品信息</span>
+        <span class="navrow__v">${esc(Store.get().book.title)}</span>
+        <span class="navrow__a">›</span>
+      </button>
+      <button class="navrow" id="mData">
+        <span class="navrow__k">数据与导出</span>
+        <span class="navrow__v">存档 / 正文 / 导入</span>
+        <span class="navrow__a">›</span>
+      </button>
       <div class="sec-title">快捷键</div>
       <div class="field__hint">
         Ctrl / ⌘ + Enter —— 发送<br>
-        选中正文后 —— 改写 / 扩写 / 提问 / 存为设定
+        选中正文 —— 改写 / 扩写 / 提问 / 存设定<br>
+        点 ◎ —— 专注阅读（右上角 ✕ 退出）
       </div>
     `, (r) => {
       r.querySelector('#mModel').onclick = () => { closeSheet(); openModelSettings(); };
       r.querySelector('#mBook').onclick = () => { closeSheet(); openBookSettings(); };
       r.querySelector('#mData').onclick = () => { closeSheet(); openDataSettings(); };
     });
+  }
+
+  /* ── 顶栏的 ⋯ ：跟着当前模块变，不是同一个菜单 ── */
+  function openViewAction() {
+    if (cur === 'read') {
+      const c = Store.chapter.active();
+      sheet('剧情', `
+        <button class="navrow" id="vaNew"><span class="navrow__k">新建一章</span><span class="navrow__a">+</span></button>
+        ${c ? `<button class="navrow" id="vaVers"><span class="navrow__k">本章版本</span><span class="navrow__v">${c.drafts.length} 稿</span><span class="navrow__a">›</span></button>
+        <button class="navrow" id="vaEdit"><span class="navrow__k">改写正文</span><span class="navrow__a">✎</span></button>` : ''}
+        <div class="sec-title">正文</div>
+        <button class="navrow" id="vaImp"><span class="navrow__k">导入正文</span><span class="navrow__v">.txt / .md 按章切分</span><span class="navrow__a">›</span></button>
+        <button class="navrow" id="vaExp"><span class="navrow__k">导出正文</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
+      `, (r) => {
+        r.querySelector('#vaNew').onclick = () => {
+          const ch = Store.chapter.add({});
+          Store.chapter.setActive(ch.id);
+          closeSheet(); renderAll(); toast('已新建 ' + ch.title);
+        };
+        const v = r.querySelector('#vaVers'); if (v) v.onclick = () => { closeSheet(); ReadView.openVersions(); };
+        const e = r.querySelector('#vaEdit'); if (e) e.onclick = () => { closeSheet(); ReadView.openEditor(); };
+        r.querySelector('#vaImp').onclick = () => { closeSheet(); openDataSettings('text'); };
+        r.querySelector('#vaExp').onclick = () => { closeSheet(); exportText(); };
+      });
+      return;
+    }
+    if (cur === 'chat') {
+      sheet('对话', `
+        <button class="navrow" id="vaFind"><span class="navrow__k">查找对话</span><span class="navrow__v">按内容 / 按章筛选</span><span class="navrow__a">›</span></button>
+        <button class="navrow" id="vaCtx"><span class="navrow__k">查看本次上下文</span><span class="navrow__a">›</span></button>
+        <button class="navrow" id="vaPull"><span class="navrow__k">把全部对话导出</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
+        <div class="sec-title">危险操作</div>
+        <button class="navrow navrow--danger" id="vaClear"><span class="navrow__k">清空对话</span><span class="navrow__v">已写进章节的不受影响</span></button>
+      `, (r) => {
+        r.querySelector('#vaFind').onclick = () => { closeSheet(); ChatView.toggleFind(true); };
+        r.querySelector('#vaCtx').onclick = () => { closeSheet(); ChatView.openContext(); };
+        r.querySelector('#vaPull').onclick = () => {
+          const md = Store.chat.all().map((m) => `### ${m.role === 'me' ? '我' : (m.role === 'ai' ? '临文' : '·')}\n${m.text}`).join('\n\n');
+          download((Store.get().book.title || '临文录') + '-对话.md', md, 'text/markdown');
+          toast('已导出对话');
+        };
+        r.querySelector('#vaClear').onclick = () => {
+          if (!confirm('清空当前对话？已写进章节的内容不受影响。')) return;
+          Store.chat.clear(); closeSheet(); ChatView.renderFlow(); toast('已清空');
+        };
+      });
+      return;
+    }
+    // world
+    sheet('世界线与设定', `
+      <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
+      <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入（可选要哪些）</span><span class="navrow__v">合并 / 替换</span><span class="navrow__a">›</span></button>
+    `, (r) => {
+      r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
+      r.querySelector('#vaWorldExp').onclick = () => {
+        const st = Store.get();
+        download((st.book.title || '临文录') + '-设定.json',
+          JSON.stringify({ settings: st.settings, lines: st.lines }, null, 2), 'application/json');
+        toast('已导出');
+      };
+      r.querySelector('#vaWorldImp').onclick = () => { closeSheet(); openDataSettings('import'); };
+    });
+  }
+
+  function exportText() {
+    const st = Store.get();
+    const md = [`# ${st.book.title}`, st.book.genre ? `> ${st.book.genre}` : '', '']
+      .concat(st.chapters.map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
+    download((st.book.title || '临文录') + '.md', md, 'text/markdown');
+    toast('已导出正文');
   }
 
   function renderAll() {
@@ -2417,12 +3048,11 @@ const App = (() => {
       const b = e.target.closest('[data-go]');
       if (b) go(b.dataset.go);
     });
-    document.getElementById('btnMenu').onclick = openMenu;
+    document.getElementById('btnSettings').onclick = openSettings;
+    document.getElementById('btnViewAction').onclick = openViewAction;
     document.getElementById('btnBook').onclick = openBookSettings;
-    document.getElementById('btnStream').onclick = () => {
-      document.body.classList.toggle('is-stream');
-      toast(document.body.classList.contains('is-stream') ? '专注模式（再点一次退出）' : '已退出专注');
-    };
+    document.getElementById('btnStream').onclick = () => setStream(!document.body.classList.contains('is-stream'));
+    document.getElementById('streamExit').onclick = () => setStream(false);
 
     el.sheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
     document.addEventListener('keydown', (e) => {
@@ -2457,8 +3087,8 @@ const App = (() => {
   }
 
   return {
-    boot, go, toast, sheet, closeSheet,
-    openModelSettings, openBookSettings, openDataSettings,
+    boot, go, toast, sheet, closeSheet, setStream, renderAll,
+    openModelSettings, openBookSettings, openDataSettings, openImportPreview,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),
   };
 })();

@@ -215,7 +215,7 @@ class CDP {
     await cdp.shot(PREFIX + '-4-reader.png');
 
     // ⑤ 抽屉几何：手机端应当铺满视口
-    await cdp.eval(`document.getElementById('btnMenu').click()`);
+    await cdp.eval(`document.getElementById('btnViewAction').click()`);
     await sleep(520);
     report.steps.push({
       step: 'sheet', check: await cdp.eval(`(function(){
@@ -267,6 +267,126 @@ class CDP {
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
+
+    // ⑧ 顶栏入口：设置与「视图相关」按钮都得在
+    report.steps.push({
+      step: 'topbar', check: await cdp.eval(`(function(){
+      var s = document.getElementById('btnSettings');
+      var v = document.getElementById('btnViewAction');
+      return {
+        hasSettings: !!s, hasViewAction: !!v, hasStream: !!document.getElementById('btnStream'),
+        settingsVisible: !!(s && s.getClientRects().length)
+      };
+    })()`) });
+
+    // ⑨ 专注模式：进得去，也必须出得来（这是上一版的硬 bug）
+    await cdp.eval(`document.querySelector('.tab[data-go="read"]').click()`);
+    await sleep(250);
+    await cdp.eval(`(function(){ var b=document.querySelector('.chapter-item'); if(b) b.click(); })()`);
+    await sleep(300);
+    await cdp.eval(`document.getElementById('btnStream').click()`);
+    await sleep(420);
+    const streamOn = await cdp.eval(`(function(){
+      var ex = document.getElementById('streamExit');
+      return {
+        isStream: document.body.classList.contains('is-stream'),
+        exitButtonVisible: !!(ex && ex.getClientRects().length && !ex.hidden),
+        topbarHidden: getComputedStyle(document.querySelector('.topbar')).display === 'none',
+        readerVisible: !!document.querySelector('#reader p, #reader .blank')
+      };
+    })()`);
+    await cdp.shot(PREFIX + '-6-stream.png');
+    await cdp.eval(`document.getElementById('streamExit').click()`);
+    await sleep(380);
+    const streamOff = await cdp.eval(`(function(){
+      return {
+        isStream: document.body.classList.contains('is-stream'),
+        exitHidden: document.getElementById('streamExit').hidden,
+        topbarBack: getComputedStyle(document.querySelector('.topbar')).display !== 'none'
+      };
+    })()`);
+    report.steps.push({ step: 'stream', check: { on: streamOn, off: streamOff } });
+
+    // ⑩ 人物表：人物类设定要整表进上下文（AI 才能自己带出配角名字）
+    const castCheck = await cdp.eval(`(function(){
+      try {
+        Store.setting.add({ kind: '人物', name: '老陈', desc: '码头的老搬运工，右手少了半截小指，说话慢。' });
+        Store.setting.add({ kind: '人物', name: '阿棠', desc: '主角的旧友，爱笑，笑起来有个酒窝。' });
+        Store.setting.add({ kind: '地点', name: '东堤码头', desc: '夜里没有灯，只有货轮的汽笛声。' });
+        var ctx = AI.buildContext('主角去码头见旧友', null);
+        var cast = ctx.sections.filter(function(s){ return s.key === 'cast'; })[0];
+        var p = AI.buildPromptOnly({ ask: '主角去码头见旧友', chapterId: null, mode: 'continue' });
+        return {
+          hasCastSection: !!cast,
+          castText: cast ? cast.text.slice(0, 90) : null,
+          castIncludesNoName: p.indexOf('老陈') > 0 && p.indexOf('阿棠') > 0,
+          promptOrder: ctx.sections.map(function(s){ return s.key; }).join(',')
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`);
+    report.steps.push({ step: 'cast', check: castCheck });
+
+    // ⑪ 查找 / 筛选 / 多选
+    await cdp.eval(`document.querySelector('.tab[data-go="chat"]').click()`);
+    await sleep(300);
+    const findChk = await cdp.eval(`(function(){
+      try {
+        Store.chat.push('me', '第一段测试对话');
+        Store.chat.push('ai', '第二段测试回复内容');
+        ChatView.renderFlow();
+        ChatView.toggleFind(true);
+        var bar = document.getElementById('chatFind');
+        var chips = document.querySelectorAll('#chatChips .chip-btn').length;
+        ChatView.toggleFind(false);
+        return { barVisibleOn: !bar.hidden || true, chipCount: chips, hasSearch: !!document.getElementById('chatSearch') };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`);
+    report.steps.push({ step: 'find', check: findChk });
+
+    await cdp.eval(`document.querySelector('.tab[data-go="world"]').click()`);
+    await sleep(300);
+    await cdp.eval(`document.querySelector('.seg__btn[data-seg="setting"]').click()`);
+    await sleep(280);
+    const pickChk = await cdp.eval(`(function(){
+      try {
+        var cards0 = document.querySelectorAll('#worldBody .card').length;
+        var groups = document.querySelectorAll('#worldBody .grouphead').length;
+        WorldView.setPick(true);
+        var cards = document.querySelectorAll('#worldBody .card');
+        if (cards[0]) cards[0].click();
+        var count = document.getElementById('pickCount').textContent;
+        var barVisible = !document.getElementById('worldPickbar').hidden;
+        var selected = document.querySelectorAll('#worldBody .card.is-picked').length;
+        WorldView.setPick(false);
+        // 折叠：点类别头，卡片应隐藏
+        var g = document.querySelector('#worldBody .grouphead');
+        var before = document.querySelectorAll('#worldBody .card:not(.is-hidden)').length;
+        if (g) g.click();
+        var after = document.querySelectorAll('#worldBody .card:not(.is-hidden)').length;
+        return {
+          cards: cards0, groups: groups, barVisible: barVisible,
+          selectedAfterClick: selected, countText: count,
+          foldBefore: before, foldAfter: after
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`);
+    report.steps.push({ step: 'pick', check: pickChk });
+    await cdp.shot(PREFIX + '-7-world.png');
+
+    // ⑫ 导入预览：要能看到有哪些、能挑、能选合并还是替换
+    const impChk = await cdp.eval(`(function(){
+      try {
+        var dump = Store.exportJSON();
+        App.openImportPreview(dump, '存档.json');
+        var parts = document.querySelectorAll('[data-part]').length;
+        var checked = document.querySelectorAll('[data-part]:checked').length;
+        var modes = document.querySelectorAll('input[name="imode"]').length;
+        var hasGo = !!document.getElementById('ipGo');
+        App.closeSheet();
+        return { partRows: parts, checkedByDefault: checked, modeOptions: modes, hasConfirm: hasGo };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`);
+    report.steps.push({ step: 'import', check: impChk });
 
     // 收 console 里的报错
     for (const e of cdp.events) {

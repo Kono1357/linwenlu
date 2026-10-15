@@ -6,6 +6,7 @@
 const ReadView = (() => {
   let el = {};
   let selText = '';
+  let chapQ = '';
 
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -34,9 +35,17 @@ const ReadView = (() => {
   }
 
   function renderList() {
-    const list = Store.chapter.all();
+    const all = Store.chapter.all();
     const cur = Store.activeChapterId;
-    if (!list.length) {
+
+    let list = all;
+    if (chapQ) {
+      const q = chapQ.toLowerCase();
+      list = all.filter((c) =>
+        c.title.toLowerCase().includes(q) || Store.chapter.textOf(c).toLowerCase().includes(q));
+    }
+
+    if (!all.length) {
       el.list.innerHTML = `<div class="blank" style="padding:36px 14px 24px">
         <div class="blank__icon">✎</div>
         <div class="blank__title">还没有章节</div>
@@ -55,6 +64,19 @@ const ReadView = (() => {
       el.list.querySelector('[data-goto-chat]').onclick = () => App.go('chat');
       return;
     }
+
+    if (!list.length) {
+      el.list.innerHTML = `<div class="blank" style="padding:36px 14px">
+        <div class="blank__icon">⌕</div>
+        <div class="blank__title">没有匹配的章节</div>
+        <div class="blank__acts"><button class="btn btn--ghost" data-clearq>清除搜索</button></div>
+      </div>`;
+      el.list.querySelector('[data-clearq]').onclick = () => {
+        chapQ = ''; if (el.search) el.search.value = ''; renderList();
+      };
+      return;
+    }
+
     el.list.innerHTML = list.map((c) => {
       const has = c.drafts.length > 0;
       const n = c.drafts.length;
@@ -209,8 +231,14 @@ const ReadView = (() => {
       ver: root.querySelector('#verBadge'),
       selbar: root.querySelector('#selbar'),
       selCount: root.querySelector('#selCount'),
+      search: root.querySelector('#chapterSearch'),
     };
 
+    let st = null;
+    if (el.search) el.search.addEventListener('input', () => {
+      clearTimeout(st);
+      st = setTimeout(() => { chapQ = el.search.value.trim(); renderList(); }, 170);
+    });
     el.list.addEventListener('click', (e) => {
       const b = e.target.closest('[data-ch]');
       if (!b) return;
@@ -276,5 +304,5 @@ const ReadView = (() => {
     el.reader.addEventListener('scroll', () => { if (!el.selbar.hidden) clearSelection(); }, { passive: true });
   }
 
-  return { init, refresh, renderList, renderReader, openEditor, clearSelection };
+  return { init, refresh, renderList, renderReader, openEditor, openVersions, clearSelection };
 })();
