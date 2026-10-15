@@ -276,38 +276,36 @@ class CDP {
       var s = document.getElementById('btnSettings');
       var v = document.getElementById('btnViewAction');
       return {
-        hasSettings: !!s, hasViewAction: !!v, hasStream: !!document.getElementById('btnStream'),
-        settingsVisible: !!(s && s.getClientRects().length)
+        hasSettings: !!s, hasViewAction: !!v,
+        settingsVisible: !!(s && s.getClientRects().length),
+        // 顶栏只该有这两个按钮（多余的按钮越少越好，每个都得能用）
+        btnCount: document.querySelectorAll('.topbar__actions .icon-btn').length
       };
     })()`) });
 
-    // ⑨ 专注模式：进得去，也必须出得来（这是上一版的硬 bug）
+    // ⑨ 顶栏菜单：任何模块点开都必须有内容，且都能关掉
     await cdp.eval(`document.querySelector('.tab[data-go="read"]').click()`);
     await sleep(250);
     await cdp.eval(`(function(){ var b=document.querySelector('.chapter-item'); if(b) b.click(); })()`);
     await sleep(300);
-    await cdp.eval(`document.getElementById('btnStream').click()`);
-    await sleep(420);
-    const streamOn = await cdp.eval(`(function(){
-      var ex = document.getElementById('streamExit');
-      return {
-        isStream: document.body.classList.contains('is-stream'),
-        exitButtonVisible: !!(ex && ex.getClientRects().length && !ex.hidden),
-        topbarHidden: getComputedStyle(document.querySelector('.topbar')).display === 'none',
-        readerVisible: !!document.querySelector('#reader p, #reader .blank')
-      };
-    })()`);
-    await cdp.shot(PREFIX + '-6-stream.png');
-    await cdp.eval(`document.getElementById('streamExit').click()`);
-    await sleep(380);
-    const streamOff = await cdp.eval(`(function(){
-      return {
-        isStream: document.body.classList.contains('is-stream'),
-        exitHidden: document.getElementById('streamExit').hidden,
-        topbarBack: getComputedStyle(document.querySelector('.topbar')).display !== 'none'
-      };
-    })()`);
-    report.steps.push({ step: 'stream', check: { on: streamOn, off: streamOff } });
+
+    const menuChecks = {};
+    for (const v of ['read', 'chat', 'world']) {
+      await cdp.eval(`document.querySelector('.tab[data-go="${v}"]').click()`);
+      await sleep(220);
+      await cdp.eval(`document.getElementById('btnViewAction').click()`);
+      await sleep(260);
+      menuChecks[v] = await cdp.eval(`(function(){
+        var panel = document.getElementById('sheet');
+        var rows = panel.querySelectorAll('.navrow');
+        var hasGlobal = !!panel.querySelector('#vaModel') && !!panel.querySelector('#vaData');
+        return { open: !panel.hidden, 项目数: rows.length, 有全局入口: hasGlobal };
+      })()`);
+      await cdp.eval(`document.getElementById('sheet').querySelector('[data-close]').click()`);
+      await sleep(200);
+      menuChecks[v]['关掉了'] = await cdp.eval(`document.getElementById('sheet').hidden`);
+    }
+    report.steps.push({ step: 'topmenu', check: menuChecks });
 
     // ⑩ 人物表：人物类设定要整表进上下文（AI 才能自己带出配角名字）
     const castCheck = await cdp.eval(`(function(){
@@ -804,6 +802,41 @@ class CDP {
           收进来的: kinds.join('、'),
           认出地点: kinds2.join('、'),
           没弹任何窗: document.getElementById('sheet').hidden
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉜ 横向滑动：任何需要左右拉才能看全的操作条都算不合格
+    // 注意：手机上"看剧情"的正文面板是故意用 translateX(100%) 停在屏幕外的，
+    // 那不是 bug，所以只查两件真事：页面能不能横滚、有没有容器要横拉。
+    report.steps.push({
+      step: 'noscroll', check: await cdp.eval(`(function(){
+      try {
+        var vw = document.documentElement.clientWidth;
+        var scrollables = [];
+        var views = ['read', 'chat', 'world'];
+        var prev = document.querySelector('.tab.is-on');
+        var prevName = prev ? prev.dataset.go : 'read';
+
+        views.forEach(function(v){
+          App.go(v);
+          document.querySelectorAll('.view:not([hidden]) *').forEach(function(el){
+            if (!el.getClientRects().length) return;
+            var cs = getComputedStyle(el);
+            if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll')
+                && el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
+              scrollables.push(v + '/' + (el.className || el.tagName).toString().split(' ')[0]
+                + '(' + el.scrollWidth + '>' + el.clientWidth + ')');
+            }
+          });
+        });
+        App.go(prevName);
+        return {
+          视口: vw,
+          页面宽: document.documentElement.scrollWidth,
+          页面能横滚: document.documentElement.scrollWidth > vw + 1,
+          还要横拉的容器: scrollables.length ? scrollables.slice(0, 8) : '无',
+          顶栏按钮数: document.querySelectorAll('.topbar__actions .icon-btn').length
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });

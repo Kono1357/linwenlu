@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 02:17 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 02:21 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -298,24 +298,25 @@ button { cursor: pointer; }
 .blank__acts { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
 .blank__acts .btn { width: auto; padding: 10px 22px; font-size: 13.5px; margin: 0; }
 
-/* 选中工具条 */
+/* 选中工具条：按钮多了就换行，不横滑（横滑等于有按钮永远看不见） */
 .selbar {
   position: absolute; left: 50%; transform: translateX(-50%);
   bottom: 16px; z-index: 15;
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  justify-content: center;
   padding: 8px 10px; border-radius: var(--r-2);
   background: var(--surface);
   border: 1px solid var(--line-2);
   box-shadow: var(--sh-3);
-  max-width: calc(100% - 24px); overflow-x: auto;
+  max-width: calc(100% - 20px);
 }
 .selbar__label { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; padding: 0 4px; }
 
 /* ─────────── 模块二：提要求 ─────────── */
 .chat__head {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  gap: 8px; padding: 11px 16px; border-bottom: 1px solid var(--line);
+  background: var(--surface); flex-wrap: wrap;
 }
 .chat__target { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .chat__targetLabel { font-size: 11px; color: var(--ink-3); letter-spacing: .08em; }
@@ -396,11 +397,9 @@ button { cursor: pointer; }
 }
 .send-btn--stop:hover { background: var(--red-soft); color: var(--red); border-color: var(--red); }
 .composer__bar {
-  display: flex; gap: 6px; padding-top: 9px;
+  display: flex; gap: 6px; padding-top: 9px; flex-wrap: wrap;
   max-width: 800px; margin: 0 auto;
-  overflow-x: auto; scrollbar-width: none;
 }
-.composer__bar::-webkit-scrollbar { display: none; }
 .chat__hint { font-size: 11.5px; color: var(--ink-3); padding: 0 2px 7px; max-width: 800px; margin: 0 auto; line-height: 1.7; }
 .chat__hint b { color: var(--accent-2); font-weight: 550; }
 
@@ -638,8 +637,7 @@ input[type="number"] { font-family: var(--mono); }
 .findbar { padding: 10px 16px 4px; max-width: 800px; width: 100%; margin: 0 auto; }
 .chapfind { padding: 0 12px 10px; }
 
-.chips { display: flex; gap: 6px; overflow-x: auto; padding: 9px 0 2px; scrollbar-width: none; }
-.chips::-webkit-scrollbar { display: none; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 9px 0 2px; }
 .chip-btn {
   flex: 0 0 auto; min-height: 34px;
   display: inline-flex; align-items: center;
@@ -837,23 +835,13 @@ input[type="number"] { font-family: var(--mono); }
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
-/* ─────────── 专注模式 ─────────── */
-body.is-stream .tabbar,
-body.is-stream .topbar { display: none; }
-body.is-stream .reader { padding-top: 48px; border-left: none; border-right: none; }
-body.is-stream .reader__head { display: none; }
-
-.stream-exit {
-  position: fixed; z-index: 70;
-  top: calc(var(--safe-t) + 12px); right: 14px;
-  padding: 8px 15px; border-radius: var(--r-pill);
-  background: var(--surface); color: var(--ink-2);
-  border: 1px solid var(--line-2);
-  font-size: 12.5px; font-weight: 550;
-  box-shadow: var(--sh-2);
-  opacity: .55; transition: opacity .2s var(--ease), background .15s var(--ease);
+/* ─────────── 禁掉一切横向滑动 ───────────
+   手机上任何需要"左右拉"才能看全的操作条，都算功能不可用。
+   所以：整页不横滚，操作条一律换行，而不是 overflow-x: auto。 */
+html, body { overflow-x: hidden; max-width: 100vw; }
+.stage, .view, .pane--body, .pane--list, .chat__flow, .world__body, .reader {
+  max-width: 100%;
 }
-.stream-exit:hover, .stream-exit:active { opacity: 1; background: var(--surface-2); color: var(--ink); }
 
 /* ─────────── 桌面端 ─────────── */
 @media (min-width: 761px) {
@@ -886,9 +874,10 @@ body.is-stream .reader__head { display: none; }
   /* 顶栏按钮与工具条在小屏上给足手指空间 */
   .icon-btn { width: 42px; height: 42px; }
   .reader__head { padding: 10px 12px; gap: 8px; }
-  .reader__tools { gap: 5px; }
+  .reader__title { min-width: 0; }
+  .reader__tools { flex: 0 0 auto; gap: 5px; }
   .reader__tools .mini-btn { padding: 8px 11px; }
-  .chat__headActs { gap: 5px; }
+  .chat__headActs { flex: 0 0 auto; gap: 5px; }
   .seg__btn { padding: 9px 20px; }
   /* 抽屉在手机上从底部上来，拇指够得着 */
   .sheet__panel {
@@ -905,7 +894,7 @@ body.is-stream .reader__head { display: none; }
   .selbar { max-width: calc(100% - 16px); }
 }
 </style>
-<meta name="build" content="2026-10-16 02:17">
+<meta name="build" content="2026-10-16 02:21">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -917,14 +906,10 @@ body.is-stream .reader__head { display: none; }
     <span class="topbar__meta" id="bookMeta">未命名作品</span>
   </button>
   <div class="topbar__actions">
-    <button class="icon-btn" id="btnStream" title="专注模式">◎</button>
-    <button class="icon-btn" id="btnViewAction" title="更多">⋯</button>
-    <button class="icon-btn icon-btn--key" id="btnSettings" title="设置（模型 / 数据）">⚙</button>
+    <button class="icon-btn" id="btnViewAction" title="菜单">⋯</button>
+    <button class="icon-btn icon-btn--key" id="btnSettings" title="设置">⚙</button>
   </div>
 </header>
-
-<!-- 专注模式的退出口：必须独立于顶栏，否则进得去出不来 -->
-<button class="stream-exit" id="streamExit" hidden>✕ 退出专注</button>
 
 <!-- ══ 主区：三个模块 ══ -->
 <main class="stage">
@@ -4158,23 +4143,9 @@ const App = (() => {
     Object.entries(map).forEach(([k, node]) => { node.hidden = k !== name; });
     el.tabbar.querySelectorAll('.tab').forEach((t) => t.classList.toggle('is-on', t.dataset.go === name));
     if (name !== 'read') document.body.classList.remove('is-reading');
-    if (name !== 'read' && document.body.classList.contains('is-stream')) setStream(false);
     if (name === 'chat' && ChatView) ChatView.refreshAll();
     if (name === 'world' && WorldView) WorldView.render();
     if (name === 'read' && ReadView) ReadView.refresh();
-  }
-
-  /* ── 专注模式：进去必须能出来 ── */
-  function setStream(on) {
-    document.body.classList.toggle('is-stream', !!on);
-    const ex = document.getElementById('streamExit');
-    if (ex) ex.hidden = !on;
-    if (on) {
-      if (cur !== 'read') go('read');
-      if (!Store.chapter.active()) { toast('先进一章再开专注', 2400); setStream(false); return; }
-      document.body.classList.add('is-reading');
-      ReadView.clearSelection();
-    }
   }
 
   /* ── Toast ── */
@@ -4663,17 +4634,46 @@ const App = (() => {
     });
   }
 
-  /* ── 顶栏的 ⋯ ：跟着当前模块变，不是同一个菜单 ── */
+  /* ── 顶栏的 ⋯ ──
+     以前每个模块一个菜单，切了模块图标不变、内容全变，很容易"点了没反应"。
+     现在改成两层：上面是当前模块能做的事，下面固定是全局入口（作品/模型/数据/外观），
+     所以任何页面点开都有东西，也永远找得到设置。 */
+  function globalRows() {
+    const cfg = Store.get().config;
+    return `
+      <div class="sec-title">全局</div>
+      <button class="navrow" id="vaBook">
+        <span class="navrow__k">作品</span>
+        <span class="navrow__v">${esc(Store.books.current().title)}</span><span class="navrow__a">›</span>
+      </button>
+      <button class="navrow" id="vaModel">
+        <span class="navrow__k">模型与外观</span>
+        <span class="navrow__v">${esc(cfg.model || '未配置')} · ${cfg.theme === 'dark' ? '夜色' : '纸感'}</span>
+        <span class="navrow__a">›</span>
+      </button>
+      <button class="navrow" id="vaData">
+        <span class="navrow__k">数据与备份</span>
+        <span class="navrow__v">存档 / 导入 / 导出</span><span class="navrow__a">›</span>
+      </button>`;
+  }
+
+  function bindGlobal(r) {
+    const b = r.querySelector('#vaBook'); if (b) b.onclick = () => { closeSheet(); openBookSettings(); };
+    const m = r.querySelector('#vaModel'); if (m) m.onclick = () => { closeSheet(); openModelSettings(); };
+    const d = r.querySelector('#vaData'); if (d) d.onclick = () => { closeSheet(); openDataSettings(); };
+  }
+
   function openViewAction() {
     if (cur === 'read') {
       const c = Store.chapter.active();
-      sheet('剧情', `
+      sheet('看剧情 · 菜单', `
         <button class="navrow" id="vaNew"><span class="navrow__k">新建一章</span><span class="navrow__a">+</span></button>
         ${c ? `<button class="navrow" id="vaVers"><span class="navrow__k">本章版本</span><span class="navrow__v">${c.drafts.length} 稿</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaEdit"><span class="navrow__k">改写正文</span><span class="navrow__a">✎</span></button>` : ''}
         <div class="sec-title">正文</div>
         <button class="navrow" id="vaImp"><span class="navrow__k">导入正文</span><span class="navrow__v">.txt / .md 按章切分</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaExp"><span class="navrow__k">导出正文</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
+        ${globalRows()}
       `, (r) => {
         r.querySelector('#vaNew').onclick = () => {
           const ch = Store.chapter.add({});
@@ -4684,11 +4684,12 @@ const App = (() => {
         const e = r.querySelector('#vaEdit'); if (e) e.onclick = () => { closeSheet(); ReadView.openEditor(); };
         r.querySelector('#vaImp').onclick = () => { closeSheet(); openDataSettings('text'); };
         r.querySelector('#vaExp').onclick = () => { closeSheet(); exportText(); };
+        bindGlobal(r);
       });
       return;
     }
     if (cur === 'chat') {
-      sheet('对话', `
+      sheet('提要求 · 菜单', `
         <button class="navrow" id="vaSegs">
           <span class="navrow__k">本章的段落</span>
           <span class="navrow__v">挑一段单独续写 / 写入</span>
@@ -4698,7 +4699,8 @@ const App = (() => {
         <button class="navrow" id="vaCtx"><span class="navrow__k">查看本次上下文</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaPull"><span class="navrow__k">把全部对话导出</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
         <div class="sec-title">危险操作</div>
-        <button class="navrow navrow--danger" id="vaClear"><span class="navrow__k">清空对话</span><span class="navrow__v">已写进章节的不受影响</span></button>
+        <button class="navrow navrow--danger" id="vaClear"><span class="navrow__k">清空本章对话</span><span class="navrow__v">已写进章节的不受影响</span></button>
+        ${globalRows()}
       `, (r) => {
         r.querySelector('#vaSegs').onclick = () => { closeSheet(); ChatView.openSegments(); };
         r.querySelector('#vaFind').onclick = () => { closeSheet(); ChatView.toggleFind(true); };
@@ -4709,22 +4711,28 @@ const App = (() => {
           toast('已导出对话');
         };
         r.querySelector('#vaClear').onclick = () => {
-          if (!confirm('清空当前对话？已写进章节的内容不受影响。')) return;
-          Store.chat.clear(); closeSheet(); ChatView.renderFlow(); toast('已清空');
+          const t = Store.chapter.active();
+          if (!t) return toast('先选一章');
+          if (!confirm(`清空《${t.title}》的对话？已写进章节的内容不受影响。`)) return;
+          Store.chat.clearChapter(t.id);
+          closeSheet(); ChatView.renderFlow(); ChatView.refreshAll(); toast('已清空本章对话');
         };
+        bindGlobal(r);
       });
       return;
     }
     // world
-    sheet('世界线与设定', `
+    sheet('世界线与设定 · 菜单', `
       <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaIgnored"><span class="navrow__k">忽略名单</span><span class="navrow__v">${Store.setting.ignoredNames().length} 个名字不再收</span><span class="navrow__a">›</span></button>
+      <div class="sec-title">存档</div>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
       <div class="field__hint" style="margin-top:14px">
         写到新的人物或地点时，系统会在后台自动收录并把说明写完整，不需要你操作。
         不想要这个行为，可以在设置里关掉。
       </div>
+      ${globalRows()}
     `, (r) => {
       r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
@@ -4735,6 +4743,7 @@ const App = (() => {
         toast('已导出');
       };
       r.querySelector('#vaWorldImp').onclick = () => { closeSheet(); openDataSettings('import'); };
+      bindGlobal(r);
     });
   }
 
@@ -4838,8 +4847,6 @@ const App = (() => {
     document.getElementById('btnSettings').onclick = openSettings;
     document.getElementById('btnViewAction').onclick = openViewAction;
     document.getElementById('btnBook').onclick = openBookSettings;
-    document.getElementById('btnStream').onclick = () => setStream(!document.body.classList.contains('is-stream'));
-    document.getElementById('streamExit').onclick = () => setStream(false);
 
     el.sheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
     document.addEventListener('keydown', (e) => {
@@ -4884,7 +4891,7 @@ const App = (() => {
   }
 
   return {
-    boot, go, toast, sheet, closeSheet, setStream, renderAll,
+    boot, go, toast, sheet, closeSheet, renderAll,
     openModelSettings, openBookSettings, openDataSettings, openImportPreview,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),
   };

@@ -19,23 +19,9 @@ const App = (() => {
     Object.entries(map).forEach(([k, node]) => { node.hidden = k !== name; });
     el.tabbar.querySelectorAll('.tab').forEach((t) => t.classList.toggle('is-on', t.dataset.go === name));
     if (name !== 'read') document.body.classList.remove('is-reading');
-    if (name !== 'read' && document.body.classList.contains('is-stream')) setStream(false);
     if (name === 'chat' && ChatView) ChatView.refreshAll();
     if (name === 'world' && WorldView) WorldView.render();
     if (name === 'read' && ReadView) ReadView.refresh();
-  }
-
-  /* ── 专注模式：进去必须能出来 ── */
-  function setStream(on) {
-    document.body.classList.toggle('is-stream', !!on);
-    const ex = document.getElementById('streamExit');
-    if (ex) ex.hidden = !on;
-    if (on) {
-      if (cur !== 'read') go('read');
-      if (!Store.chapter.active()) { toast('先进一章再开专注', 2400); setStream(false); return; }
-      document.body.classList.add('is-reading');
-      ReadView.clearSelection();
-    }
   }
 
   /* ── Toast ── */
@@ -524,17 +510,46 @@ const App = (() => {
     });
   }
 
-  /* ── 顶栏的 ⋯ ：跟着当前模块变，不是同一个菜单 ── */
+  /* ── 顶栏的 ⋯ ──
+     以前每个模块一个菜单，切了模块图标不变、内容全变，很容易"点了没反应"。
+     现在改成两层：上面是当前模块能做的事，下面固定是全局入口（作品/模型/数据/外观），
+     所以任何页面点开都有东西，也永远找得到设置。 */
+  function globalRows() {
+    const cfg = Store.get().config;
+    return `
+      <div class="sec-title">全局</div>
+      <button class="navrow" id="vaBook">
+        <span class="navrow__k">作品</span>
+        <span class="navrow__v">${esc(Store.books.current().title)}</span><span class="navrow__a">›</span>
+      </button>
+      <button class="navrow" id="vaModel">
+        <span class="navrow__k">模型与外观</span>
+        <span class="navrow__v">${esc(cfg.model || '未配置')} · ${cfg.theme === 'dark' ? '夜色' : '纸感'}</span>
+        <span class="navrow__a">›</span>
+      </button>
+      <button class="navrow" id="vaData">
+        <span class="navrow__k">数据与备份</span>
+        <span class="navrow__v">存档 / 导入 / 导出</span><span class="navrow__a">›</span>
+      </button>`;
+  }
+
+  function bindGlobal(r) {
+    const b = r.querySelector('#vaBook'); if (b) b.onclick = () => { closeSheet(); openBookSettings(); };
+    const m = r.querySelector('#vaModel'); if (m) m.onclick = () => { closeSheet(); openModelSettings(); };
+    const d = r.querySelector('#vaData'); if (d) d.onclick = () => { closeSheet(); openDataSettings(); };
+  }
+
   function openViewAction() {
     if (cur === 'read') {
       const c = Store.chapter.active();
-      sheet('剧情', `
+      sheet('看剧情 · 菜单', `
         <button class="navrow" id="vaNew"><span class="navrow__k">新建一章</span><span class="navrow__a">+</span></button>
         ${c ? `<button class="navrow" id="vaVers"><span class="navrow__k">本章版本</span><span class="navrow__v">${c.drafts.length} 稿</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaEdit"><span class="navrow__k">改写正文</span><span class="navrow__a">✎</span></button>` : ''}
         <div class="sec-title">正文</div>
         <button class="navrow" id="vaImp"><span class="navrow__k">导入正文</span><span class="navrow__v">.txt / .md 按章切分</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaExp"><span class="navrow__k">导出正文</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
+        ${globalRows()}
       `, (r) => {
         r.querySelector('#vaNew').onclick = () => {
           const ch = Store.chapter.add({});
@@ -545,11 +560,12 @@ const App = (() => {
         const e = r.querySelector('#vaEdit'); if (e) e.onclick = () => { closeSheet(); ReadView.openEditor(); };
         r.querySelector('#vaImp').onclick = () => { closeSheet(); openDataSettings('text'); };
         r.querySelector('#vaExp').onclick = () => { closeSheet(); exportText(); };
+        bindGlobal(r);
       });
       return;
     }
     if (cur === 'chat') {
-      sheet('对话', `
+      sheet('提要求 · 菜单', `
         <button class="navrow" id="vaSegs">
           <span class="navrow__k">本章的段落</span>
           <span class="navrow__v">挑一段单独续写 / 写入</span>
@@ -559,7 +575,8 @@ const App = (() => {
         <button class="navrow" id="vaCtx"><span class="navrow__k">查看本次上下文</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaPull"><span class="navrow__k">把全部对话导出</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
         <div class="sec-title">危险操作</div>
-        <button class="navrow navrow--danger" id="vaClear"><span class="navrow__k">清空对话</span><span class="navrow__v">已写进章节的不受影响</span></button>
+        <button class="navrow navrow--danger" id="vaClear"><span class="navrow__k">清空本章对话</span><span class="navrow__v">已写进章节的不受影响</span></button>
+        ${globalRows()}
       `, (r) => {
         r.querySelector('#vaSegs').onclick = () => { closeSheet(); ChatView.openSegments(); };
         r.querySelector('#vaFind').onclick = () => { closeSheet(); ChatView.toggleFind(true); };
@@ -570,22 +587,28 @@ const App = (() => {
           toast('已导出对话');
         };
         r.querySelector('#vaClear').onclick = () => {
-          if (!confirm('清空当前对话？已写进章节的内容不受影响。')) return;
-          Store.chat.clear(); closeSheet(); ChatView.renderFlow(); toast('已清空');
+          const t = Store.chapter.active();
+          if (!t) return toast('先选一章');
+          if (!confirm(`清空《${t.title}》的对话？已写进章节的内容不受影响。`)) return;
+          Store.chat.clearChapter(t.id);
+          closeSheet(); ChatView.renderFlow(); ChatView.refreshAll(); toast('已清空本章对话');
         };
+        bindGlobal(r);
       });
       return;
     }
     // world
-    sheet('世界线与设定', `
+    sheet('世界线与设定 · 菜单', `
       <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaIgnored"><span class="navrow__k">忽略名单</span><span class="navrow__v">${Store.setting.ignoredNames().length} 个名字不再收</span><span class="navrow__a">›</span></button>
+      <div class="sec-title">存档</div>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
       <div class="field__hint" style="margin-top:14px">
         写到新的人物或地点时，系统会在后台自动收录并把说明写完整，不需要你操作。
         不想要这个行为，可以在设置里关掉。
       </div>
+      ${globalRows()}
     `, (r) => {
       r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
@@ -596,6 +619,7 @@ const App = (() => {
         toast('已导出');
       };
       r.querySelector('#vaWorldImp').onclick = () => { closeSheet(); openDataSettings('import'); };
+      bindGlobal(r);
     });
   }
 
@@ -699,8 +723,6 @@ const App = (() => {
     document.getElementById('btnSettings').onclick = openSettings;
     document.getElementById('btnViewAction').onclick = openViewAction;
     document.getElementById('btnBook').onclick = openBookSettings;
-    document.getElementById('btnStream').onclick = () => setStream(!document.body.classList.contains('is-stream'));
-    document.getElementById('streamExit').onclick = () => setStream(false);
 
     el.sheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
     document.addEventListener('keydown', (e) => {
@@ -745,7 +767,7 @@ const App = (() => {
   }
 
   return {
-    boot, go, toast, sheet, closeSheet, setStream, renderAll,
+    boot, go, toast, sheet, closeSheet, renderAll,
     openModelSettings, openBookSettings, openDataSettings, openImportPreview,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),
   };
