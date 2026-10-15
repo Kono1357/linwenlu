@@ -210,49 +210,109 @@ const ChatView = (() => {
   function openCommit(m) {
     const c = target();
     const cur = c ? Store.chapter.currentDraft(c) : null;
-    const has = cur && cur.text.trim();
+    const has = !!(cur && cur.text.trim());
+    const last = Store.get().config.lastCommit || 'append';
+
+    // 上次用的那种排最前，减少一次判断
+    const opts = [
+      { k: 'append', label: `续接到本章末尾${has ? '' : '（本章为空，直接写入）'}`, cls: 'btn' },
+      { k: 'new', label: '存为一个新版本（旧稿保留）', cls: 'btn btn--ghost' },
+      { k: 'replace', label: '替换当前版本', cls: 'btn btn--ghost' },
+    ].filter((o) => !(o.k === 'replace' && !has));
+    opts.sort((a, b) => (a.k === last ? -1 : b.k === last ? 1 : 0));
+
     App.sheet('写入剧情', `
-      <div class="field__hint" style="margin-bottom:12px">
+      <div class="field__hint" style="margin-bottom:14px">
         这段 <b>${m.text.length}</b> 字将写进
         <b>${c ? esc(c.title) : '（新章）'}</b>。
       </div>
-      <button class="btn" id="cmAppend">续接到本章末尾${has ? '' : '（本章为空，直接写入）'}</button>
-      <button class="btn btn--ghost" id="cmNew" style="margin-top:8px">存为一个新版本（旧稿保留）</button>
-      <button class="btn btn--ghost" id="cmReplace" style="margin-top:8px">替换当前版本</button>
-      ${!c ? '<div class="field__hint" style="margin-top:10px">还没有章节，会先自动建一章。</div>' : ''}
+      ${opts.map((o, i) => `<button class="${o.cls} cm-opt" data-k="${o.k}"
+        style="margin-top:${i ? 8 : 0}px">${o.label}${o.k === last ? '　· 上次用这个' : ''}</button>`).join('')}
+      <label class="pickrow" style="margin-top:16px;border-bottom:none">
+        <input type="checkbox" id="cmNoAsk">
+        <span class="pickrow__k" style="font-size:12.5px;color:var(--ink-3)">以后不再问我，直接用「续接到末尾」</span>
+      </label>
     `, (r) => {
       const ensure = () => c || Store.chapter.add({ title: '第1章' });
 
-      r.querySelector('#cmAppend').onclick = () => {
+      const doCommit = (kind) => {
         const ch = ensure();
         const d = Store.chapter.currentDraft(ch);
-        const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + m.text.trim() : m.text.trim();
-        if (d) Store.chapter.setDraftText(ch.id, next);
-        else Store.chapter.newDraft(ch.id, next, 'AI');
+        if (kind === 'append') {
+          const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + m.text.trim() : m.text.trim();
+          if (d) Store.chapter.setDraftText(ch.id, next); else Store.chapter.newDraft(ch.id, next, 'AI');
+        } else if (kind === 'new') {
+          Store.chapter.newDraft(ch.id, m.text.trim(), 'AI');
+        } else {
+          Store.chapter.setDraftText(ch.id, m.text.trim());
+        }
+        Store.config.set({ lastCommit: kind });
         Store.chat.markClipped(m.id);
         App.closeSheet(); renderFlow();
         if (ReadView) ReadView.refresh();
-        App.toast('已写进 ' + ch.title);
+
+        if (r.querySelector('#cmNoAsk') && r.querySelector('#cmNoAsk').checked) {
+          Store.config.set({ commitMode: 'auto' });
+          App.toast('已设置：以后直接续接到末尾');
+        } else {
+          App.toast('已写进 ' + ch.title);
+        }
+
+        // 顺手认一下新名字 —— 只做建议，不自动入库
+        const names = AI.findNewNames(m.text);
+        if (names.length) setTimeout(() => openNameSuggest(names), 420);
       };
 
-      r.querySelector('#cmNew').onclick = () => {
-        const ch = ensure();
-        Store.chapter.newDraft(ch.id, m.text.trim(), 'AI');
-        Store.chat.markClipped(m.id);
-        App.closeSheet(); renderFlow();
-        if (ReadView) ReadView.refresh();
-        App.toast('已存为新版本');
-      };
+      r.querySelectorAll('.cm-opt').forEach((b) => b.onclick = () => doCommit(b.dataset.k));
+    });
+  }
 
-      const rep = r.querySelector('#cmReplace');
-      if (!has) rep.style.display = 'none';
-      rep.onclick = () => {
-        const ch = ensure();
-        Store.chapter.setDraftText(ch.id, m.text.trim());
-        Store.chat.markClipped(m.id);
-        App.closeSheet(); renderFlow();
-        if (ReadView) ReadView.refresh();
-        App.toast('已替换当前稿');
+  /* ── 自动续接：开关打开时，生成完直接落到本章末尾 ── */
+  function autoAppend(m) {
+    let ch = target();
+    if (!ch) ch = Store.chapter.add({ title: '第1章' });
+    const d = Store.chapter.currentDraft(ch);
+    const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + m.text.trim() : m.text.trim();
+    if (d) Store.chapter.setDraftText(ch.id, next); else Store.chapter.newDraft(ch.id, next, 'AI');
+    Store.chat.markClipped(m.id);
+    if (ReadView) ReadView.refresh();
+    App.toast('已自动写进 ' + ch.title + '（可在设置里关掉）', 2400);
+    const names = AI.findNewNames(m.text);
+    if (names.length) setTimeout(() => openNameSuggest(names), 900);
+  }
+
+  /* ── 新名字入库 ── */
+  function openNameSuggest(names) {
+    App.sheet('发现新名字', `
+      <div class="field__hint" style="margin-bottom:12px">
+        这些名字在刚才那段里出现了两次以上，看起来是人物。<br>
+        存进设定之后，<b>以后每次生成都会自动带上他们</b>——不用再重复交代。
+      </div>
+      ${names.map((n, i) => `
+        <div class="namerow">
+          <input type="checkbox" data-nm="${i}" checked style="width:17px;height:17px;accent-color:var(--gold)">
+          <span class="namerow__k">${esc(n.name)}</span>
+          <span class="namerow__n">出现 ${n.n} 次</span>
+          <select class="select" data-nk="${i}">
+            <option>人物</option><option>地点</option><option>物件</option><option>设定</option>
+          </select>
+        </div>`).join('')}
+      <button class="btn" id="nmSave" style="margin-top:16px">存进设定</button>
+      <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用</button>
+    `, (r) => {
+      r.querySelector('#nmSkip').onclick = () => App.closeSheet();
+      r.querySelector('#nmSave').onclick = () => {
+        let n = 0;
+        names.forEach((x, i) => {
+          const cb = r.querySelector(`[data-nm="${i}"]`);
+          if (!cb || !cb.checked) return;
+          const kind = r.querySelector(`[data-nk="${i}"]`).value;
+          Store.setting.add({ kind, name: x.name, desc: '' });
+          n++;
+        });
+        App.closeSheet();
+        if (WorldView) WorldView.render();
+        App.toast(n ? `已存进设定 ${n} 条，记得补一下说明` : '没有新增');
       };
     });
   }
@@ -310,7 +370,9 @@ const ChatView = (() => {
         Store.chat.push('note', '这次没有返回内容。检查模型名或稍后重试。');
       } else {
         holder.remove();
-        Store.chat.push('ai', text, { chapterId: target() ? target().id : null });
+        const msg = Store.chat.push('ai', text, { chapterId: target() ? target().id : null });
+        // 开了自动续接就直接落盘，不再弹层
+        if ((Store.get().config.commitMode || 'ask') === 'auto') autoAppend(msg);
       }
     } catch (e) {
       body.classList.remove('reader__caret');

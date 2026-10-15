@@ -388,6 +388,85 @@ class CDP {
     })()`);
     report.steps.push({ step: 'import', check: impChk });
 
+    // ⑬ 接着上次写
+    report.steps.push({
+      step: 'resume', check: await cdp.eval(`(function(){
+      try {
+        var chs = Store.chapter.all();
+        if (!chs.length) return { error: '没有章节可测' };
+        Store.chapter.setActive(chs[0].id);
+        state_clearActive();
+        ReadView.refresh();
+        var tip = document.querySelector('#chapterList .resume-hint');
+        return {
+          hasHint: !!tip,
+          hintText: tip ? tip.textContent.replace(/\\s+/g, ' ').trim().slice(0, 46) : null
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+      function state_clearActive(){ Store.chapter.setActive(null); }
+    })()`) });
+
+    // ⑭ 章末翻页
+    report.steps.push({
+      step: 'chapnav', check: await cdp.eval(`(function(){
+      try {
+        var chs = Store.chapter.all();
+        if (chs.length < 2) return { error: '章节不够' };
+        Store.chapter.setActive(chs[0].id);
+        ReadView.refresh();
+        var nav = document.querySelector('#reader .reader__nav');
+        if (!nav) return { hasNav: false, note: '正文为空时不显示导航' };
+        var btns = nav.querySelectorAll('.navchap');
+        var pos = nav.querySelector('.reader__navPos').textContent.trim();
+        var from = document.getElementById('readerTitle').textContent;
+        var nextBtn = nav.querySelectorAll('[data-nav]')[1];
+        var moved = false;
+        if (nextBtn && !nextBtn.disabled) { nextBtn.click(); moved = document.getElementById('readerTitle').textContent !== from; }
+        return {
+          hasNav: true, btnCount: btns.length, pos: pos, moved: moved,
+          from: from, to: document.getElementById('readerTitle').textContent
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ⑮ 从正文里认名字（对照测：裸提取 vs 已入库过滤）
+    report.steps.push({
+      step: 'names', check: await cdp.eval(`(function(){
+      try {
+        var t = '老陈把烟头摁灭在栏杆上，说：这么晚了还来。阿棠在后面笑了一声。老陈没回头。阿棠走近了两步。风很大。';
+        var raw = AI.extractNames(t, []);
+        var fresh = AI.findNewNames(t);
+        // 换个没进过设定的文本，应该能认出来
+        var t2 = '沈砚推开门。周砚白抬头看了他一眼。沈砚没说话。周砚白也没说话。';
+        var fresh2 = AI.findNewNames(t2);
+        return {
+          裸提取: raw.map(function(x){ return x.name + '×' + x.n; }),
+          已入库的会被过滤: fresh.length === 0 && raw.length > 0,
+          新文本能认出: fresh2.map(function(x){ return x.name + '×' + x.n; }),
+          只出现一次不算: AI.extractNames('老陈点了点头。风很大。', []).length
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ⑯ 落盘选项记住上次
+    report.steps.push({
+      step: 'commitmem', check: await cdp.eval(`(function(){
+      try {
+        Store.config.set({ lastCommit: 'new' });
+        Store.chat.push('ai', '测试落盘选项的排序。');
+        ChatView.renderFlow();
+        var b = document.querySelector('[data-act="commit"]');
+        if (!b) return { error: '没有落盘入口' };
+        b.click();
+        var opts = document.querySelectorAll('.sheet__panel .cm-opt');
+        var first = opts.length ? opts[0].dataset.k : null;
+        var marked = opts.length ? /上次用这个/.test(opts[0].textContent) : false;
+        var hasNoAsk = !!document.getElementById('cmNoAsk');
+        App.closeSheet();
+        return { optionCount: opts.length, firstOption: first, markedAsLast: marked, hasDontAskAgain: hasNoAsk };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {

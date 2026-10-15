@@ -240,5 +240,53 @@ const AI = (() => {
     }
   }
 
-  return { buildContext, buildMessages, buildPromptOnly, generate, probe, cut };
+  /* ── 从正文里认名字：给「新角色入库」用 ──
+     中文人名没有形态标记，只能靠字头 + 上下文。策略是宁可漏、不可错：
+     ① 只认百家姓与「老/小/阿」这类称呼头；② 必须出现在词首（前面是标点或开头）；
+     ③ 末字不能是虚词动词（否则「老陈把」会被人当成名字）；④ 全文出现 ≥2 次才算候选。
+     结果只是「建议」，要用户勾选后才入库 —— 不自动写。 */
+  const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫老小阿大';
+  const STOPCHAR = new Set(('把被让给和跟向从又也都没很才就还只像似乎便即这里那着你我他她它们的是了在有不之与其并且但因为所以如果虽然'
+    + '说道问答笑走来去站坐看想听见叫喊吃喝拉睡望盯摇点抓拿放推拉踢打').split(''));
+  const STOP = new Set(['黄金', '白天', '马上', '高大', '温柔', '江南', '风景', '行李', '手掌', '树木', '花样', '毛病', '程度', '程序', '的确', '仿佛', '石头', '安静', '常常', '通常', '平静', '外面', '上面', '下面', '里面', '前面', '后面', '旁边', '周围', '对方', '结果', '原因', '情况', '时候', '地方', '东西', '事情', '样子', '心里', '眼神', '声音', '问题', '办法', '世界', '人生', '男人', '女人', '孩子', '老人', '学生', '老师', '医生', '警察', '老板', '经理', '司机', '服务',
+    '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数']);
+
+  function extractNames(text, known) {
+    const src = String(text || '');
+    if (src.length < 12) return [];
+    const knownSet = new Set(known || []);
+    const count = new Map();
+
+    for (let i = 0; i < src.length; i++) {
+      if (SURNAMES.indexOf(src[i]) < 0) continue;
+      // 词首约束：要么开头，要么前面不是汉字
+      if (i > 0 && /[\u4e00-\u9fa5]/.test(src[i - 1])) continue;
+
+      let name = null;
+      for (const len of [3, 2]) {          // 先试三字，末字是虚词就退回两字
+        const cand = src.slice(i, i + len);
+        if (cand.length < len) continue;
+        if (!/^[\u4e00-\u9fa5]+$/.test(cand)) continue;
+        if (STOPCHAR.has(cand[cand.length - 1])) continue;
+        name = cand;
+        break;
+      }
+      if (!name || STOP.has(name) || knownSet.has(name)) continue;
+      count.set(name, (count.get(name) || 0) + 1);
+    }
+
+    return [...count.entries()]
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, n]) => ({ name, n }));
+  }
+
+  /** 扫一批文本，找出还没进设定的名字 */
+  function findNewNames(text) {
+    const known = Store.setting.all().map((s) => s.name);
+    return extractNames(text, known);
+  }
+
+  return { buildContext, buildMessages, buildPromptOnly, generate, probe, cut, extractNames, findNewNames };
 })();

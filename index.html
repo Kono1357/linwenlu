@@ -212,6 +212,55 @@ button { cursor: pointer; }
 .blank__acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
 .blank__acts .btn { width: auto; padding: 9px 20px; font-size: 13.5px; margin: 0; }
 
+/* 章末导航：读完自然往下滚就能翻页 */
+.reader__nav {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 42px; padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.navchap {
+  flex: 1; min-width: 0;
+  padding: 11px 12px; border-radius: var(--r);
+  background: var(--bg-2); border: 1px solid var(--line);
+  color: var(--ink-2); font-size: 12.5px; font-family: var(--ui);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.navchap:hover:not(:disabled) { background: var(--bg-3); color: var(--ink); border-color: var(--line-2); }
+.navchap:disabled { opacity: .35; cursor: default; }
+.reader__navPos { flex: 0 0 auto; font-family: var(--ui); font-size: 11.5px; color: var(--ink-3); }
+
+/* 继续上次 */
+.resume-hint {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  margin-bottom: 8px; padding: 11px 12px;
+  border-radius: var(--r);
+  background: linear-gradient(90deg, rgba(201,162,39,.14), rgba(201,162,39,.04));
+  border: 1px solid var(--gold-dim);
+  text-align: left;
+  transition: background .15s, border-color .15s;
+}
+.resume-hint:hover { border-color: var(--gold); }
+.resume-hint__k {
+  flex: 0 0 auto; font-size: 10.5px; letter-spacing: .06em;
+  color: var(--gold-2); padding: 2px 7px; border-radius: 20px;
+  background: rgba(201,162,39,.16);
+}
+.resume-hint__t {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resume-hint__w { flex: 0 0 auto; font-size: 10.5px; color: var(--ink-3); font-family: var(--mono); }
+
+/* 新名字入库 */
+.namerow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 2px; border-bottom: 1px solid var(--line);
+}
+.namerow__k { flex: 1; font-size: 14px; }
+.namerow__n { font-size: 11.5px; color: var(--ink-3); }
+.namerow select { width: auto; padding: 5px 8px; font-size: 12px; }
+
 /* 选中工具条 */
 .selbar {
   position: absolute; left: 50%; transform: translateX(-50%);
@@ -828,6 +877,8 @@ const Store = (() => {
         ctxSettings: 12,
         ctxPrev: 1,
         ctxTail: 1200,
+        commitMode: 'ask',      // ask（每次问）| auto（自动续接）
+        lastCommit: 'append',   // 上次选的写入方式，下次排在第一位
       },
     };
   }
@@ -1029,7 +1080,11 @@ const Store = (() => {
       touch('draft-drop', { chapter: c });
       return true;
     },
-    setActive(id) { state.__activeChapter = id || null; save(); },
+    setActive(id) {
+      state.__activeChapter = id || null;
+      if (id) state.__lastOpened = { id, at: Date.now() };
+      save();
+    },
   };
 
   const setting = {
@@ -1226,6 +1281,7 @@ const Store = (() => {
     chapter, setting, line, chat, config,
     exportJSON, parseArchive, importJSON, reset, isPersistFailed,
     get activeChapterId() { return state && state.__activeChapter || null; },
+    get lastOpened() { return (state && state.__lastOpened) || null; },
   };
 })();
 
@@ -1472,7 +1528,55 @@ const AI = (() => {
     }
   }
 
-  return { buildContext, buildMessages, buildPromptOnly, generate, probe, cut };
+  /* ── 从正文里认名字：给「新角色入库」用 ──
+     中文人名没有形态标记，只能靠字头 + 上下文。策略是宁可漏、不可错：
+     ① 只认百家姓与「老/小/阿」这类称呼头；② 必须出现在词首（前面是标点或开头）；
+     ③ 末字不能是虚词动词（否则「老陈把」会被人当成名字）；④ 全文出现 ≥2 次才算候选。
+     结果只是「建议」，要用户勾选后才入库 —— 不自动写。 */
+  const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫老小阿大';
+  const STOPCHAR = new Set(('把被让给和跟向从又也都没很才就还只像似乎便即这里那着你我他她它们的是了在有不之与其并且但因为所以如果虽然'
+    + '说道问答笑走来去站坐看想听见叫喊吃喝拉睡望盯摇点抓拿放推拉踢打').split(''));
+  const STOP = new Set(['黄金', '白天', '马上', '高大', '温柔', '江南', '风景', '行李', '手掌', '树木', '花样', '毛病', '程度', '程序', '的确', '仿佛', '石头', '安静', '常常', '通常', '平静', '外面', '上面', '下面', '里面', '前面', '后面', '旁边', '周围', '对方', '结果', '原因', '情况', '时候', '地方', '东西', '事情', '样子', '心里', '眼神', '声音', '问题', '办法', '世界', '人生', '男人', '女人', '孩子', '老人', '学生', '老师', '医生', '警察', '老板', '经理', '司机', '服务',
+    '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数']);
+
+  function extractNames(text, known) {
+    const src = String(text || '');
+    if (src.length < 12) return [];
+    const knownSet = new Set(known || []);
+    const count = new Map();
+
+    for (let i = 0; i < src.length; i++) {
+      if (SURNAMES.indexOf(src[i]) < 0) continue;
+      // 词首约束：要么开头，要么前面不是汉字
+      if (i > 0 && /[\u4e00-\u9fa5]/.test(src[i - 1])) continue;
+
+      let name = null;
+      for (const len of [3, 2]) {          // 先试三字，末字是虚词就退回两字
+        const cand = src.slice(i, i + len);
+        if (cand.length < len) continue;
+        if (!/^[\u4e00-\u9fa5]+$/.test(cand)) continue;
+        if (STOPCHAR.has(cand[cand.length - 1])) continue;
+        name = cand;
+        break;
+      }
+      if (!name || STOP.has(name) || knownSet.has(name)) continue;
+      count.set(name, (count.get(name) || 0) + 1);
+    }
+
+    return [...count.entries()]
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, n]) => ({ name, n }));
+  }
+
+  /** 扫一批文本，找出还没进设定的名字 */
+  function findNewNames(text) {
+    const known = Store.setting.all().map((s) => s.name);
+    return extractNames(text, known);
+  }
+
+  return { buildContext, buildMessages, buildPromptOnly, generate, probe, cut, extractNames, findNewNames };
 })();
 
 /* ─── js/read.js ─── */
@@ -1564,6 +1668,23 @@ const ReadView = (() => {
         <span class="chapter-item__no">${String(c.no).padStart(3, '0')}</span>${esc(c.title)}
       </button>`;
     }).join('');
+
+    // 「接着上次写」：刷新或隔天回来时，直接把上次那章顶到最上面
+    if (!cur && !chapQ) {
+      const lo = Store.lastOpened;
+      const lc = lo ? Store.chapter.by(lo.id) : null;
+      if (lc) {
+        const d = new Date(lo.at);
+        const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const tip = document.createElement('button');
+        tip.className = 'resume-hint';
+        tip.dataset.ch = lc.id;
+        tip.innerHTML = `<span class="resume-hint__k">继续上次</span>
+          <span class="resume-hint__t">${String(lc.no).padStart(3, '0')} · ${esc(lc.title)}</span>
+          <span class="resume-hint__w">${when}</span>`;
+        el.list.prepend(tip);
+      }
+    }
   }
 
   function renderReader() {
@@ -1588,8 +1709,37 @@ const ReadView = (() => {
     const d = Store.chapter.currentDraft(c);
     el.title.textContent = `${String(c.no).padStart(3, '0')} · ${c.title}`;
     el.ver.textContent = d ? `${d.ver}/${c.drafts.length}` : '0';
-    el.reader.innerHTML = renderBody(d ? d.text : '', c);
+
+    const all = Store.chapter.all();
+    const idx = all.findIndex((x) => x.id === c.id);
+    const prev = idx > 0 ? all[idx - 1] : null;
+    const next = idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
+    const hasText = !!(d && d.text.trim());
+
+    el.reader.innerHTML = renderBody(d ? d.text : '', c) + (hasText ? `
+      <div class="reader__nav">
+        <button class="navchap" data-nav="${prev ? prev.id : ''}" ${prev ? '' : 'disabled'}>
+          ‹ ${prev ? esc(prev.title) : '已是第一章'}
+        </button>
+        <span class="reader__navPos">${idx + 1} / ${all.length}</span>
+        <button class="navchap" data-nav="${next ? next.id : ''}" ${next ? '' : 'disabled'}>
+          ${next ? esc(next.title) : '已是最后一章'} ›
+        </button>
+      </div>` : '');
     el.reader.scrollTop = 0;
+
+    el.reader.querySelectorAll('[data-nav]').forEach((b) => {
+      if (b.disabled) return;
+      b.onclick = () => {
+        const id = b.dataset.nav;
+        if (!id) return;
+        Store.chapter.setActive(id);
+        renderReader();
+        renderList();
+        el.reader.scrollTop = 0;
+      };
+    });
+
     el.reader.querySelectorAll('[data-blank]').forEach((b) => {
       b.onclick = () => {
         if (b.dataset.blank === 'write') App.go('chat');
@@ -1998,49 +2148,109 @@ const ChatView = (() => {
   function openCommit(m) {
     const c = target();
     const cur = c ? Store.chapter.currentDraft(c) : null;
-    const has = cur && cur.text.trim();
+    const has = !!(cur && cur.text.trim());
+    const last = Store.get().config.lastCommit || 'append';
+
+    // 上次用的那种排最前，减少一次判断
+    const opts = [
+      { k: 'append', label: `续接到本章末尾${has ? '' : '（本章为空，直接写入）'}`, cls: 'btn' },
+      { k: 'new', label: '存为一个新版本（旧稿保留）', cls: 'btn btn--ghost' },
+      { k: 'replace', label: '替换当前版本', cls: 'btn btn--ghost' },
+    ].filter((o) => !(o.k === 'replace' && !has));
+    opts.sort((a, b) => (a.k === last ? -1 : b.k === last ? 1 : 0));
+
     App.sheet('写入剧情', `
-      <div class="field__hint" style="margin-bottom:12px">
+      <div class="field__hint" style="margin-bottom:14px">
         这段 <b>${m.text.length}</b> 字将写进
         <b>${c ? esc(c.title) : '（新章）'}</b>。
       </div>
-      <button class="btn" id="cmAppend">续接到本章末尾${has ? '' : '（本章为空，直接写入）'}</button>
-      <button class="btn btn--ghost" id="cmNew" style="margin-top:8px">存为一个新版本（旧稿保留）</button>
-      <button class="btn btn--ghost" id="cmReplace" style="margin-top:8px">替换当前版本</button>
-      ${!c ? '<div class="field__hint" style="margin-top:10px">还没有章节，会先自动建一章。</div>' : ''}
+      ${opts.map((o, i) => `<button class="${o.cls} cm-opt" data-k="${o.k}"
+        style="margin-top:${i ? 8 : 0}px">${o.label}${o.k === last ? '　· 上次用这个' : ''}</button>`).join('')}
+      <label class="pickrow" style="margin-top:16px;border-bottom:none">
+        <input type="checkbox" id="cmNoAsk">
+        <span class="pickrow__k" style="font-size:12.5px;color:var(--ink-3)">以后不再问我，直接用「续接到末尾」</span>
+      </label>
     `, (r) => {
       const ensure = () => c || Store.chapter.add({ title: '第1章' });
 
-      r.querySelector('#cmAppend').onclick = () => {
+      const doCommit = (kind) => {
         const ch = ensure();
         const d = Store.chapter.currentDraft(ch);
-        const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + m.text.trim() : m.text.trim();
-        if (d) Store.chapter.setDraftText(ch.id, next);
-        else Store.chapter.newDraft(ch.id, next, 'AI');
+        if (kind === 'append') {
+          const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + m.text.trim() : m.text.trim();
+          if (d) Store.chapter.setDraftText(ch.id, next); else Store.chapter.newDraft(ch.id, next, 'AI');
+        } else if (kind === 'new') {
+          Store.chapter.newDraft(ch.id, m.text.trim(), 'AI');
+        } else {
+          Store.chapter.setDraftText(ch.id, m.text.trim());
+        }
+        Store.config.set({ lastCommit: kind });
         Store.chat.markClipped(m.id);
         App.closeSheet(); renderFlow();
         if (ReadView) ReadView.refresh();
-        App.toast('已写进 ' + ch.title);
+
+        if (r.querySelector('#cmNoAsk') && r.querySelector('#cmNoAsk').checked) {
+          Store.config.set({ commitMode: 'auto' });
+          App.toast('已设置：以后直接续接到末尾');
+        } else {
+          App.toast('已写进 ' + ch.title);
+        }
+
+        // 顺手认一下新名字 —— 只做建议，不自动入库
+        const names = AI.findNewNames(m.text);
+        if (names.length) setTimeout(() => openNameSuggest(names), 420);
       };
 
-      r.querySelector('#cmNew').onclick = () => {
-        const ch = ensure();
-        Store.chapter.newDraft(ch.id, m.text.trim(), 'AI');
-        Store.chat.markClipped(m.id);
-        App.closeSheet(); renderFlow();
-        if (ReadView) ReadView.refresh();
-        App.toast('已存为新版本');
-      };
+      r.querySelectorAll('.cm-opt').forEach((b) => b.onclick = () => doCommit(b.dataset.k));
+    });
+  }
 
-      const rep = r.querySelector('#cmReplace');
-      if (!has) rep.style.display = 'none';
-      rep.onclick = () => {
-        const ch = ensure();
-        Store.chapter.setDraftText(ch.id, m.text.trim());
-        Store.chat.markClipped(m.id);
-        App.closeSheet(); renderFlow();
-        if (ReadView) ReadView.refresh();
-        App.toast('已替换当前稿');
+  /* ── 自动续接：开关打开时，生成完直接落到本章末尾 ── */
+  function autoAppend(m) {
+    let ch = target();
+    if (!ch) ch = Store.chapter.add({ title: '第1章' });
+    const d = Store.chapter.currentDraft(ch);
+    const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + m.text.trim() : m.text.trim();
+    if (d) Store.chapter.setDraftText(ch.id, next); else Store.chapter.newDraft(ch.id, next, 'AI');
+    Store.chat.markClipped(m.id);
+    if (ReadView) ReadView.refresh();
+    App.toast('已自动写进 ' + ch.title + '（可在设置里关掉）', 2400);
+    const names = AI.findNewNames(m.text);
+    if (names.length) setTimeout(() => openNameSuggest(names), 900);
+  }
+
+  /* ── 新名字入库 ── */
+  function openNameSuggest(names) {
+    App.sheet('发现新名字', `
+      <div class="field__hint" style="margin-bottom:12px">
+        这些名字在刚才那段里出现了两次以上，看起来是人物。<br>
+        存进设定之后，<b>以后每次生成都会自动带上他们</b>——不用再重复交代。
+      </div>
+      ${names.map((n, i) => `
+        <div class="namerow">
+          <input type="checkbox" data-nm="${i}" checked style="width:17px;height:17px;accent-color:var(--gold)">
+          <span class="namerow__k">${esc(n.name)}</span>
+          <span class="namerow__n">出现 ${n.n} 次</span>
+          <select class="select" data-nk="${i}">
+            <option>人物</option><option>地点</option><option>物件</option><option>设定</option>
+          </select>
+        </div>`).join('')}
+      <button class="btn" id="nmSave" style="margin-top:16px">存进设定</button>
+      <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用</button>
+    `, (r) => {
+      r.querySelector('#nmSkip').onclick = () => App.closeSheet();
+      r.querySelector('#nmSave').onclick = () => {
+        let n = 0;
+        names.forEach((x, i) => {
+          const cb = r.querySelector(`[data-nm="${i}"]`);
+          if (!cb || !cb.checked) return;
+          const kind = r.querySelector(`[data-nk="${i}"]`).value;
+          Store.setting.add({ kind, name: x.name, desc: '' });
+          n++;
+        });
+        App.closeSheet();
+        if (WorldView) WorldView.render();
+        App.toast(n ? `已存进设定 ${n} 条，记得补一下说明` : '没有新增');
       };
     });
   }
@@ -2098,7 +2308,9 @@ const ChatView = (() => {
         Store.chat.push('note', '这次没有返回内容。检查模型名或稍后重试。');
       } else {
         holder.remove();
-        Store.chat.push('ai', text, { chapterId: target() ? target().id : null });
+        const msg = Store.chat.push('ai', text, { chapterId: target() ? target().id : null });
+        // 开了自动续接就直接落盘，不再弹层
+        if ((Store.get().config.commitMode || 'ask') === 'auto') autoAppend(msg);
       }
     } catch (e) {
       body.classList.remove('reader__caret');
@@ -2680,7 +2892,18 @@ const App = (() => {
           <input class="input" id="cfgTail" type="number" min="0" max="6000" step="100" value="${c.ctxTail}">
         </div>
       </div>
-      <button class="btn" id="cfgSave">保存</button>
+      <div class="sec-title">写完怎么落盘</div>
+      <label class="pickrow">
+        <input type="radio" name="cmode" value="ask" ${c.commitMode === 'auto' ? '' : 'checked'}>
+        <span class="pickrow__k">每次问我</span>
+        <span class="pickrow__n" style="font-size:11px">弹三个选项</span>
+      </label>
+      <label class="pickrow">
+        <input type="radio" name="cmode" value="auto" ${c.commitMode === 'auto' ? 'checked' : ''}>
+        <span class="pickrow__k">直接续接到末尾</span>
+        <span class="pickrow__n" style="font-size:11px">不弹窗，最快</span>
+      </label>
+      <button class="btn" id="cfgSave" style="margin-top:20px">保存</button>
       <button class="btn btn--ghost" id="cfgTest" style="margin-top:8px">连通性测试</button>
       <div class="field__hint" id="cfgOut" style="margin-top:10px">${ready ? '已配置' : '还没填 Key'}</div>
     `, (r) => {
@@ -2690,6 +2913,7 @@ const App = (() => {
       tempRange.oninput = () => { tempLabel.textContent = '温度 ' + Number(tempRange.value).toFixed(1); };
 
       g('#cfgSave').onclick = () => {
+        const cm = r.querySelector('input[name="cmode"]:checked');
         Store.config.set({
           apiBase: g('#cfgBase').value.trim() || 'https://api.deepseek.com/v1',
           apiKey: g('#cfgKey').value.trim(),
@@ -2698,6 +2922,7 @@ const App = (() => {
           style: g('#cfgStyle').value.trim(),
           ctxSettings: Number(g('#cfgSet').value) || 0,
           ctxTail: Number(g('#cfgTail').value) || 0,
+          commitMode: cm ? cm.value : 'ask',
         });
         closeSheet(); ChatView.hint(); toast('已保存');
       };

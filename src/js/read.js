@@ -86,6 +86,23 @@ const ReadView = (() => {
         <span class="chapter-item__no">${String(c.no).padStart(3, '0')}</span>${esc(c.title)}
       </button>`;
     }).join('');
+
+    // 「接着上次写」：刷新或隔天回来时，直接把上次那章顶到最上面
+    if (!cur && !chapQ) {
+      const lo = Store.lastOpened;
+      const lc = lo ? Store.chapter.by(lo.id) : null;
+      if (lc) {
+        const d = new Date(lo.at);
+        const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        const tip = document.createElement('button');
+        tip.className = 'resume-hint';
+        tip.dataset.ch = lc.id;
+        tip.innerHTML = `<span class="resume-hint__k">继续上次</span>
+          <span class="resume-hint__t">${String(lc.no).padStart(3, '0')} · ${esc(lc.title)}</span>
+          <span class="resume-hint__w">${when}</span>`;
+        el.list.prepend(tip);
+      }
+    }
   }
 
   function renderReader() {
@@ -110,8 +127,37 @@ const ReadView = (() => {
     const d = Store.chapter.currentDraft(c);
     el.title.textContent = `${String(c.no).padStart(3, '0')} · ${c.title}`;
     el.ver.textContent = d ? `${d.ver}/${c.drafts.length}` : '0';
-    el.reader.innerHTML = renderBody(d ? d.text : '', c);
+
+    const all = Store.chapter.all();
+    const idx = all.findIndex((x) => x.id === c.id);
+    const prev = idx > 0 ? all[idx - 1] : null;
+    const next = idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
+    const hasText = !!(d && d.text.trim());
+
+    el.reader.innerHTML = renderBody(d ? d.text : '', c) + (hasText ? `
+      <div class="reader__nav">
+        <button class="navchap" data-nav="${prev ? prev.id : ''}" ${prev ? '' : 'disabled'}>
+          ‹ ${prev ? esc(prev.title) : '已是第一章'}
+        </button>
+        <span class="reader__navPos">${idx + 1} / ${all.length}</span>
+        <button class="navchap" data-nav="${next ? next.id : ''}" ${next ? '' : 'disabled'}>
+          ${next ? esc(next.title) : '已是最后一章'} ›
+        </button>
+      </div>` : '');
     el.reader.scrollTop = 0;
+
+    el.reader.querySelectorAll('[data-nav]').forEach((b) => {
+      if (b.disabled) return;
+      b.onclick = () => {
+        const id = b.dataset.nav;
+        if (!id) return;
+        Store.chapter.setActive(id);
+        renderReader();
+        renderList();
+        el.reader.scrollTop = 0;
+      };
+    });
+
     el.reader.querySelectorAll('[data-blank]').forEach((b) => {
       b.onclick = () => {
         if (b.dataset.blank === 'write') App.go('chat');

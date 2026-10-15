@@ -101,7 +101,18 @@ const App = (() => {
           <input class="input" id="cfgTail" type="number" min="0" max="6000" step="100" value="${c.ctxTail}">
         </div>
       </div>
-      <button class="btn" id="cfgSave">保存</button>
+      <div class="sec-title">写完怎么落盘</div>
+      <label class="pickrow">
+        <input type="radio" name="cmode" value="ask" ${c.commitMode === 'auto' ? '' : 'checked'}>
+        <span class="pickrow__k">每次问我</span>
+        <span class="pickrow__n" style="font-size:11px">弹三个选项</span>
+      </label>
+      <label class="pickrow">
+        <input type="radio" name="cmode" value="auto" ${c.commitMode === 'auto' ? 'checked' : ''}>
+        <span class="pickrow__k">直接续接到末尾</span>
+        <span class="pickrow__n" style="font-size:11px">不弹窗，最快</span>
+      </label>
+      <button class="btn" id="cfgSave" style="margin-top:20px">保存</button>
       <button class="btn btn--ghost" id="cfgTest" style="margin-top:8px">连通性测试</button>
       <div class="field__hint" id="cfgOut" style="margin-top:10px">${ready ? '已配置' : '还没填 Key'}</div>
     `, (r) => {
@@ -111,6 +122,7 @@ const App = (() => {
       tempRange.oninput = () => { tempLabel.textContent = '温度 ' + Number(tempRange.value).toFixed(1); };
 
       g('#cfgSave').onclick = () => {
+        const cm = r.querySelector('input[name="cmode"]:checked');
         Store.config.set({
           apiBase: g('#cfgBase').value.trim() || 'https://api.deepseek.com/v1',
           apiKey: g('#cfgKey').value.trim(),
@@ -119,6 +131,7 @@ const App = (() => {
           style: g('#cfgStyle').value.trim(),
           ctxSettings: Number(g('#cfgSet').value) || 0,
           ctxTail: Number(g('#cfgTail').value) || 0,
+          commitMode: cm ? cm.value : 'ask',
         });
         closeSheet(); ChatView.hint(); toast('已保存');
       };

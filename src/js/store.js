@@ -35,6 +35,8 @@ const Store = (() => {
         ctxSettings: 12,
         ctxPrev: 1,
         ctxTail: 1200,
+        commitMode: 'ask',      // ask（每次问）| auto（自动续接）
+        lastCommit: 'append',   // 上次选的写入方式，下次排在第一位
       },
     };
   }
@@ -236,7 +238,11 @@ const Store = (() => {
       touch('draft-drop', { chapter: c });
       return true;
     },
-    setActive(id) { state.__activeChapter = id || null; save(); },
+    setActive(id) {
+      state.__activeChapter = id || null;
+      if (id) state.__lastOpened = { id, at: Date.now() };
+      save();
+    },
   };
 
   const setting = {
@@ -433,5 +439,6 @@ const Store = (() => {
     chapter, setting, line, chat, config,
     exportJSON, parseArchive, importJSON, reset, isPersistFailed,
     get activeChapterId() { return state && state.__activeChapter || null; },
+    get lastOpened() { return (state && state.__lastOpened) || null; },
   };
 })();

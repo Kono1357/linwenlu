@@ -201,6 +201,55 @@ button { cursor: pointer; }
 .blank__acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
 .blank__acts .btn { width: auto; padding: 9px 20px; font-size: 13.5px; margin: 0; }
 
+/* 章末导航：读完自然往下滚就能翻页 */
+.reader__nav {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 42px; padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.navchap {
+  flex: 1; min-width: 0;
+  padding: 11px 12px; border-radius: var(--r);
+  background: var(--bg-2); border: 1px solid var(--line);
+  color: var(--ink-2); font-size: 12.5px; font-family: var(--ui);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.navchap:hover:not(:disabled) { background: var(--bg-3); color: var(--ink); border-color: var(--line-2); }
+.navchap:disabled { opacity: .35; cursor: default; }
+.reader__navPos { flex: 0 0 auto; font-family: var(--ui); font-size: 11.5px; color: var(--ink-3); }
+
+/* 继续上次 */
+.resume-hint {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  margin-bottom: 8px; padding: 11px 12px;
+  border-radius: var(--r);
+  background: linear-gradient(90deg, rgba(201,162,39,.14), rgba(201,162,39,.04));
+  border: 1px solid var(--gold-dim);
+  text-align: left;
+  transition: background .15s, border-color .15s;
+}
+.resume-hint:hover { border-color: var(--gold); }
+.resume-hint__k {
+  flex: 0 0 auto; font-size: 10.5px; letter-spacing: .06em;
+  color: var(--gold-2); padding: 2px 7px; border-radius: 20px;
+  background: rgba(201,162,39,.16);
+}
+.resume-hint__t {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resume-hint__w { flex: 0 0 auto; font-size: 10.5px; color: var(--ink-3); font-family: var(--mono); }
+
+/* 新名字入库 */
+.namerow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 2px; border-bottom: 1px solid var(--line);
+}
+.namerow__k { flex: 1; font-size: 14px; }
+.namerow__n { font-size: 11.5px; color: var(--ink-3); }
+.namerow select { width: auto; padding: 5px 8px; font-size: 12px; }
+
 /* 选中工具条 */
 .selbar {
   position: absolute; left: 50%; transform: translateX(-50%);
