@@ -428,7 +428,7 @@ const App = (() => {
     if (cur === 'chat') {
       sheet('对话', `
         <button class="navrow" id="vaSegs">
-          <span class="navrow__k">对话里的段落</span>
+          <span class="navrow__k">本章的段落</span>
           <span class="navrow__v">挑一段单独续写 / 写入</span>
           <span class="navrow__a">›</span>
         </button>

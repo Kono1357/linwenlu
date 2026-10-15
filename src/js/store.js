@@ -109,6 +109,11 @@ const Store = (() => {
       }))
       .filter((m) => m.text !== '');
 
+    // 「上次写到哪」也要跟着存档走，否则导入后这个位置就丢了
+    if (raw.__lastOpened && typeof raw.__lastOpened === 'object' && raw.__lastOpened.id) {
+      out.__lastOpened = { id: str(raw.__lastOpened.id), at: num(raw.__lastOpened.at, Date.now()) };
+    }
+
     return out;
   }
 
@@ -332,7 +337,23 @@ const Store = (() => {
       touch('chat-update', m);
       return m;
     },
+    /** 这条消息落盘后才算真正属于某一章，回填标记 */
+    attach(id, chapterId) {
+      const m = state.chat.find((x) => x.id === id);
+      if (!m || !chapterId) return null;
+      m.chapterId = chapterId;
+      touch('chat-update', m);
+      return m;
+    },
     clear() { state.chat = []; touch('chat-clear'); },
+    /** 只清某一章的对话（章节本身不动） */
+    clearChapter(chapterId) {
+      if (!chapterId) return 0;
+      const before = state.chat.length;
+      state.chat = state.chat.filter((m) => m.chapterId !== chapterId);
+      touch('chat-clear');
+      return before - state.chat.length;
+    },
   };
 
   const config = {

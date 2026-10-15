@@ -484,8 +484,10 @@ class CDP {
       try {
         Store.chat.clear();
         Store.config.set({ targetWords: 200 });
-        var m1 = Store.chat.push('ai', '第一段：他在码头站着，风很大，没有人来。');
-        Store.chat.push('ai', '第二段：他转身往回走，把烟头丢在地上。');
+        var t0 = Store.chapter.active();
+        var cid = t0 ? t0.id : null;
+        var m1 = Store.chat.push('ai', '第一段：他在码头站着，风很大，没有人来。', { chapterId: cid });
+        Store.chat.push('ai', '第二段：他转身往回走，把烟头丢在地上。', { chapterId: cid });
         ChatView.renderFlow();
         var box = document.querySelectorAll('[data-acts]')[0];
         if (!box) return { error: '没有消息操作区' };
@@ -560,6 +562,64 @@ class CDP {
           引号统一: out.indexOf('「我知道了」') >= 0,
           整理入口在: !!document.getElementById('btnTidy'),
           AI顺稿可用: typeof AI.buildSmoothMessages === 'function'
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉓ 对话按章隔离：切了写作目标，就只该看到那一章的对话
+    report.steps.push({
+      step: 'chatscope', check: await cdp.eval(`(function(){
+      try {
+        Store.chat.clear();
+        var chs = Store.chapter.all();
+        if (chs.length < 2) return { error: '章节不够' };
+        var c1 = chs[0], c2 = chs[1];
+        Store.chapter.setActive(c1.id);
+        Store.chat.push('me', '第一章的问题', { chapterId: c1.id });
+        Store.chat.push('ai', '第一章的回答', { chapterId: c1.id });
+        Store.chapter.setActive(c2.id);
+        Store.chat.push('me', '第二章的问题', { chapterId: c2.id });
+        Store.chat.push('ai', '第二章的回答', { chapterId: c2.id });
+
+        Store.chapter.setActive(c1.id);
+        ChatView.refreshAll();
+        var n1 = document.querySelectorAll('#chatFlow .msg').length;
+        var t1 = document.getElementById('chatFlow').textContent;
+
+        Store.chapter.setActive(c2.id);
+        ChatView.refreshAll();
+        var n2 = document.querySelectorAll('#chatFlow .msg').length;
+        var t2 = document.getElementById('chatFlow').textContent;
+
+        var chip = document.querySelector('#chatChips .chip-btn');
+        return {
+          第一章: n1, 第二章: n2,
+          切章后看不到别章内容: !/第一章的回答/.test(t2) && /第二章的回答/.test(t2),
+          默认选中本章: chip ? chip.textContent.replace(/\\s+/g, '') : null,
+          用户消息也带章标记: Store.chat.all().filter(function(m){return m.role==='me'&&m.chapterId;}).length
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉔ 换写作目标时，旧基线要作废（否则会把上一章的内容写进这一章）
+    report.steps.push({
+      step: 'targetreset', check: await cdp.eval(`(function(){
+      try {
+        var chs = Store.chapter.all();
+        if (chs.length < 2) return { error: '章节不够' };
+        Store.chat.clear();
+        Store.chapter.setActive(chs[0].id);
+        var m = Store.chat.push('ai', '这是第一章里的一段内容。', { chapterId: chs[0].id });
+        ChatView.refreshAll();
+        ChatView.setReplyTo(m);
+        var before = document.getElementById('chatHint').textContent;
+        Store.chapter.setActive(chs[1].id);
+        ChatView.refreshAll();
+        var after = document.getElementById('chatHint').textContent;
+        return {
+          设了基线: /接着写/.test(before),
+          换章后自动作废: !/接着写/.test(after),
+          换章后看不到旧内容: !/第一章里的一段/.test(document.getElementById('chatFlow').textContent)
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });

@@ -13,7 +13,9 @@ const ChatView = (() => {
   // 查找 / 筛选状态
   let findOn = false;
   let findQ = '';
-  let findChap = 'all';      // 'all' | 'draft'（未写入）| chapterId
+  let findChap = 'auto';     // 'auto'（跟当前写作目标）| 'all' | 'draft' | chapterId
+  let lastRendered = -1;     // 用来判断"是不是新消息进来"，只有新消息才自动滚到底
+  let lastTargetId = null;   // 上次的写作目标，用来判断"换章了"
 
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -28,11 +30,25 @@ const ChatView = (() => {
     } catch (_) { return e; }
   }
 
-  /** 当前筛选下的消息 */
+  /** 当前筛选下的消息。
+      默认只显示「当前写作目标」那一章的对话 —— 翻找起来才不费劲。
+      系统提示（note）不分章，始终显示。 */
+  function currentScope() {
+    if (findChap !== 'auto') return findChap;
+    const t = target();
+    return t ? t.id : 'all';
+  }
+
   function filtered() {
     let all = Store.chat.all();
-    if (findChap === 'draft') all = all.filter((m) => !m.clipped && m.role === 'ai');
-    else if (findChap !== 'all') all = all.filter((m) => m.chapterId === findChap);
+    const scope = currentScope();
+
+    if (scope === 'draft') {
+      all = all.filter((m) => !m.clipped && m.role === 'ai');
+    } else if (scope !== 'all') {
+      // 系统提示不分章；**没有章标记的（旧数据）也要留着**，否则升级后老对话会凭空消失
+      all = all.filter((m) => m.role === 'note' || !m.chapterId || m.chapterId === scope);
+    }
     if (findQ) {
       const q = findQ.toLowerCase();
       all = all.filter((m) => m.text.toLowerCase().includes(q));
@@ -115,19 +131,31 @@ const ChatView = (() => {
     }
 
     if (!all.length) {
+      const scope = currentScope();
+      const scoped = scope !== 'all' && scope !== 'draft';
+      const t = target();
       el.flow.innerHTML = `<div class="blank" style="padding:34px 14px">
-        <div class="blank__icon">⌕</div>
-        <div class="blank__title">没有匹配的对话</div>
-        <div class="blank__acts"><button class="btn btn--ghost" data-clearfind>清除筛选</button></div>
+        <div class="blank__icon">${scoped && !findQ ? '✎' : '⌕'}</div>
+        <div class="blank__title">${scoped && !findQ ? '本章还没有对话' : '没有匹配的对话'}</div>
+        <div class="blank__acts">
+          ${scoped && !findQ
+          ? '<button class="btn btn--ghost" data-showall>看全部章节的对话</button>'
+          : '<button class="btn btn--ghost" data-clearfind>清除筛选</button>'}
+        </div>
       </div>`;
-      const c = el.flow.querySelector('[data-clearfind]');
-      if (c) c.onclick = () => { findQ = ''; findChap = 'all'; syncFind(); renderFlow(); };
+      const c1 = el.flow.querySelector('[data-clearfind]');
+      if (c1) c1.onclick = () => { findQ = ''; findChap = 'auto'; syncFind(); renderFlow(); };
+      const c2 = el.flow.querySelector('[data-showall]');
+      if (c2) c2.onclick = () => { findChap = 'all'; syncFind(); renderFlow(); };
       return;
     }
 
     el.flow.innerHTML = all.map(msgHTML).join('');
     bindActs();
-    scrollEnd();
+    if (el.chips) renderChips();
+    // 只有"来了新消息"才自动滚到底；翻旧记录时不打扰
+    if (lastRendered < 0 || all.length > lastRendered) scrollEnd();
+    lastRendered = all.length;
   }
 
   /** 把查找/筛选状态同步到控件 */
@@ -139,18 +167,16 @@ const ChatView = (() => {
 
   function renderChips() {
     const all = Store.chat.all();
-    const ids = [...new Set(all.map((m) => m.chapterId).filter(Boolean))];
-    const cnt = (fn) => all.filter(fn).length;
+    const t = target();
+    const mine = t ? all.filter((m) => m.chapterId === t.id) : [];
     const chips = [
+      { k: 'auto', t: '本章', n: mine.length, hint: t ? t.title : '' },
       { k: 'all', t: '全部', n: all.length },
-      { k: 'draft', t: '未写入', n: cnt((m) => !m.clipped && m.role === 'ai') },
-      ...ids.map((id) => {
-        const c = Store.chapter.by(id);
-        return { k: id, t: c ? (c.no + '. ' + c.title) : '未知章', n: cnt((m) => m.chapterId === id) };
-      }),
+      { k: 'draft', t: '未写入', n: all.filter((m) => !m.clipped && m.role === 'ai').length },
     ];
     el.chips.innerHTML = chips.map((c) =>
-      `<button class="chip-btn ${findChap === c.k ? 'is-on' : ''}" data-fc="${esc(c.k)}">${esc(c.t)}<span class="chip-btn__n">${c.n}</span></button>`
+      `<button class="chip-btn ${findChap === c.k ? 'is-on' : ''}" data-fc="${esc(c.k)}"
+        title="${esc(c.hint || c.t)}">${esc(c.t)}<span class="chip-btn__n">${c.n}</span></button>`
     ).join('');
     el.chips.querySelectorAll('[data-fc]').forEach((b) => b.onclick = () => {
       findChap = b.dataset.fc; syncFind(); renderFlow();
@@ -159,7 +185,7 @@ const ChatView = (() => {
 
   function toggleFind(on) {
     findOn = on === undefined ? !findOn : !!on;
-    if (!findOn) { findQ = ''; findChap = 'all'; }
+    if (!findOn) { findQ = ''; findChap = 'auto'; }
     syncFind();
     renderFlow();
     if (findOn && el.search) setTimeout(() => el.search.focus(), 60);
@@ -270,13 +296,20 @@ const ChatView = (() => {
     if (!silent) App.toast('已取消续写基线');
   }
 
-  /* ── 查看本章各段（问题：段落混在一起，没法单独处理）── */
+  /* ── 查看本章各段（段落混在一起就没法单独处理）── */
   function openSegments() {
-    const segs = Store.chat.all().filter((m) => m.role === 'ai');
-    if (!segs.length) return App.toast('还没有生成过内容');
-    App.sheet('对话里的段落', `
+    const t = target();
+    const segs = Store.chat.all().filter((m) =>
+      m.role === 'ai' && (!t || !m.chapterId || m.chapterId === t.id));
+    const others = Store.chat.all().filter((m) =>
+      m.role === 'ai' && t && m.chapterId && m.chapterId !== t.id).length;
+    if (!segs.length) {
+      return App.toast(others ? '本章还没生成过内容（别章有 ' + others + ' 段）' : '还没有生成过内容', 2600);
+    }
+    App.sheet('本章的段落', `
       <div class="field__hint" style="margin-bottom:12px">
         每次生成都是一段，可以各自处理。点「设为基线」就用它接着写。
+        ${others ? `<br>（另外 ${others} 段属于别的章，没列在这里）` : ''}
       </div>
       ${segs.slice().reverse().map((m) => {
       const c = m.chapterId ? Store.chapter.by(m.chapterId) : null;
@@ -315,9 +348,13 @@ const ChatView = (() => {
     });
   }
 
-  /* ── 落盘 ── */
+  /* ── 落盘 ──
+     写进的章以「这条消息属于哪一章」为准，而不是"此刻选中的章" ——
+     否则翻到旧对话里点写入，会莫名其妙写进另一章。 */
   function openCommit(m) {
-    const c = target();
+    const owner = m.chapterId ? Store.chapter.by(m.chapterId) : null;
+    const c = owner || target();
+    const wrongChapter = !!(owner && target() && owner.id !== target().id);
     const cur = c ? Store.chapter.currentDraft(c) : null;
     const has = !!(cur && cur.text.trim());
     const last = Store.get().config.lastCommit || 'append';
@@ -334,6 +371,7 @@ const ChatView = (() => {
       <div class="field__hint" style="margin-bottom:14px">
         这段 <b>${m.text.length}</b> 字将写进
         <b>${c ? esc(c.title) : '（新章）'}</b>。
+        ${wrongChapter ? `<br><span style="color:var(--gold-2)">这段对话属于「${esc(owner.title)}」，所以写到那一章去 —— 不是你现在选中的「${esc(target().title)}」。</span>` : ''}
       </div>
       ${opts.map((o, i) => `<button class="${o.cls} cm-opt" data-k="${o.k}"
         style="margin-top:${i ? 8 : 0}px">${o.label}${o.k === last ? '　· 上次用这个' : ''}</button>`).join('')}
@@ -357,6 +395,17 @@ const ChatView = (() => {
         }
         Store.config.set({ lastCommit: kind });
         Store.chat.markClipped(m.id);
+        Store.chat.attach(m.id, ch.id);   // 落盘后才算真属于这一章
+
+        // 顺带把「已经在库里的角色」的新原句补成佐证，设定会自己长厚
+        const known = Store.setting.all();
+        const q = AI.quotesFor(m.text, known.map((s) => s.name));
+        let added = 0;
+        Object.keys(q).forEach((name) => {
+          const s = known.find((x) => x.name === name);
+          if (s) { Store.setting.addQuotes(s.id, q[name]); added++; }
+        });
+
         App.closeSheet(); renderFlow();
         if (ReadView) ReadView.refresh();
 
@@ -364,7 +413,7 @@ const ChatView = (() => {
           Store.config.set({ commitMode: 'auto' });
           App.toast('已设置：以后直接续接到末尾');
         } else {
-          App.toast('已写进 ' + ch.title);
+          App.toast(`已写进 ${ch.title}${added ? ` · 顺带补了 ${added} 条设定佐证` : ''}`, 2400);
         }
 
         // 顺手认一下新名字 —— 只做建议，不自动入库
@@ -384,6 +433,7 @@ const ChatView = (() => {
     const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + m.text.trim() : m.text.trim();
     if (d) Store.chapter.setDraftText(ch.id, next); else Store.chapter.newDraft(ch.id, next, 'AI');
     Store.chat.markClipped(m.id);
+    Store.chat.attach(m.id, ch.id);
     if (ReadView) ReadView.refresh();
     App.toast('已自动写进 ' + ch.title + '（可在设置里关掉）', 2400);
     const names = AI.findNewNames(m.text);
@@ -448,7 +498,8 @@ const ChatView = (() => {
     if (askOverride === undefined) el.input.value = '';
     autoGrow();
 
-    Store.chat.push('me', ask + (extra ? `\n〔带入选中 ${extra.length} 字〕` : ''));
+    const msgChapId = target() ? target().id : null;
+    Store.chat.push('me', ask + (extra ? `\n〔带入选中 ${extra.length} 字〕` : ''), { chapterId: msgChapId });
     pendingExtra = null;
     hint();
 
@@ -622,9 +673,13 @@ const ChatView = (() => {
       });
     }
     root.querySelector('#btnNewChat').onclick = () => {
-      if (!Store.chat.all().length) return;
-      if (!confirm('清空当前对话？（已写进章节的内容不受影响）')) return;
-      Store.chat.clear(); renderFlow();
+      const t = target();
+      const n = t ? Store.chat.all().filter((m) => m.chapterId === t.id).length : 0;
+      if (!n) return App.toast('本章还没有对话');
+      if (!confirm(`清空《${t.title}》的对话？（已写进章节的内容不受影响）`)) return;
+      Store.chat.clearChapter(t.id);
+      renderFlow(); renderChips();
+      App.toast('已清空本章对话');
     };
 
     // 不在底部时给「跳到最新」
@@ -664,7 +719,18 @@ const ChatView = (() => {
     syncFind();
   }
 
-  function refreshAll() { renderTarget(); hint(); renderFlow(); if (ReadView) ReadView.refresh(); }
+  function refreshAll() {
+    // 换了写作目标 → 旧基线作废（否则会把上一章的内容当基线写进这一章）
+    const t = target();
+    const tid = t ? t.id : null;
+    if (tid !== lastTargetId) {
+      if (replyTo) replyTo = null;
+      lastTargetId = tid;
+    }
+    lastRendered = -1;   // 换目标了，重新判断要不要滚到底
+    renderTarget(); hint(); renderFlow();
+    if (ReadView) ReadView.refresh();
+  }
 
   return {
     init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,

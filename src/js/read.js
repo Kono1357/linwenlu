@@ -133,6 +133,8 @@ const ReadView = (() => {
     const prev = idx > 0 ? all[idx - 1] : null;
     const next = idx >= 0 && idx < all.length - 1 ? all[idx + 1] : null;
     const hasText = !!(d && d.text.trim());
+    const sameChapter = el.reader.dataset.chapterId === c.id;
+    const keepScroll = el.reader.scrollTop;
 
     el.reader.innerHTML = renderBody(d ? d.text : '', c) + (hasText ? `
       <div class="reader__nav">
@@ -144,7 +146,10 @@ const ReadView = (() => {
           ${next ? esc(next.title) : '已是最后一章'} ›
         </button>
       </div>` : '');
-    el.reader.scrollTop = 0;
+
+    // 同一章刷新（比如改完稿回来）保留滚动位置；换章才回到顶部
+    el.reader.dataset.chapterId = c.id;
+    el.reader.scrollTop = sameChapter ? keepScroll : 0;
 
     el.reader.querySelectorAll('[data-nav]').forEach((b) => {
       if (b.disabled) return;
@@ -152,9 +157,8 @@ const ReadView = (() => {
         const id = b.dataset.nav;
         if (!id) return;
         Store.chapter.setActive(id);
-        renderReader();
+        renderReader();   // 换章时它自己会回到顶部
         renderList();
-        el.reader.scrollTop = 0;
       };
     });
 
@@ -227,9 +231,13 @@ const ReadView = (() => {
         App.closeSheet(); refresh(); App.toast('已复制为新版本');
       };
       root.querySelector('#vDel').onclick = () => {
-        if (!confirm(`删除《${c.title}》整章？该操作不可撤销。`)) return;
+        const n = Store.chat.all().filter((m) => m.chapterId === c.id).length;
+        if (!confirm(`删除《${c.title}》整章？${n ? `\n该章的 ${n} 条对话会一起清掉。` : ''}\n该操作不可撤销。`)) return;
+        if (n) Store.chat.clearChapter(c.id);
         Store.chapter.remove(c.id);
-        App.closeSheet(); refresh(); App.toast('已删除');
+        App.closeSheet(); refresh();
+        if (typeof ChatView !== 'undefined' && ChatView) ChatView.refreshAll();
+        App.toast('已删除');
       };
     });
   }

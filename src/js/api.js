@@ -344,8 +344,23 @@ const AI = (() => {
     return extractNames(text, known);
   }
 
+  /** 反过来：从文本里给「已经入库的名字」收集原句，用来补佐证 */
+  function quotesFor(text, names) {
+    const src = String(text || '');
+    if (!src) return {};
+    const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
+    const out = {};
+    (names || []).forEach((n) => {
+      const name = String(n || '').trim();
+      if (name.length < 2) return;
+      const hit = sentences.filter((s) => s.includes(name));
+      if (hit.length) out[name] = hit.slice(0, 3);
+    });
+    return out;
+  }
+
   return {
     buildContext, buildMessages, buildPromptOnly, buildSmoothMessages,
-    generate, probe, cut, extractNames, findNewNames,
+    generate, probe, cut, extractNames, findNewNames, quotesFor,
   };
 })();
