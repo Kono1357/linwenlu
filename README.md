@@ -4,6 +4,8 @@
 
 打开就能写，不用装环境、不用起服务、不用注册。数据留在你自己的浏览器里。
 
+**在线用**：<https://kono1357.github.io/linwenlu/>
+
 <p align="center">
   <img src="assets/shot-read.png" width="240" alt="看剧情">
   <img src="assets/shot-chat.png" width="240" alt="提要求">
