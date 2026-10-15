@@ -424,6 +424,22 @@ const Store = (() => {
     },
     isIgnored(name) { return book().ignored.includes(String(name || '').trim()); },
     ignoredNames() { return book().ignored; },
+    /** 清掉自动收录的条目（作者自己加的不动） */
+    clearAuto() {
+      const b = book();
+      const before = b.settings.length;
+      b.settings = b.settings.filter((s) => !s.auto);
+      touch('setting-clear');
+      return before - b.settings.length;
+    },
+    /** 全清 */
+    clearAll() {
+      const b = book();
+      const n = b.settings.length;
+      b.settings = [];
+      touch('setting-clear');
+      return n;
+    },
     unignore(name) {
       const b = book();
       b.ignored = b.ignored.filter((x) => x !== name);

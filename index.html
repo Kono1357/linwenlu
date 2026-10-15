@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 02:37 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 03:07 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -914,7 +914,7 @@ html, body { overflow-x: clip; max-width: 100%; }
   .selbar { max-width: calc(100% - 16px); }
 }
 </style>
-<meta name="build" content="2026-10-16 02:37">
+<meta name="build" content="2026-10-16 03:07">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -1480,6 +1480,22 @@ const Store = (() => {
     },
     isIgnored(name) { return book().ignored.includes(String(name || '').trim()); },
     ignoredNames() { return book().ignored; },
+    /** 清掉自动收录的条目（作者自己加的不动） */
+    clearAuto() {
+      const b = book();
+      const before = b.settings.length;
+      b.settings = b.settings.filter((s) => !s.auto);
+      touch('setting-clear');
+      return before - b.settings.length;
+    },
+    /** 全清 */
+    clearAll() {
+      const b = book();
+      const n = b.settings.length;
+      b.settings = [];
+      touch('setting-clear');
+      return n;
+    },
     unignore(name) {
       const b = book();
       b.ignored = b.ignored.filter((x) => x !== name);
@@ -2160,11 +2176,12 @@ const AI = (() => {
     ];
   }
 
-  /* ── 设定生成：写「人设卡」，不是归纳原文 ──
-     作者要的是"先立住人，再写剧情"，所以这里不是在总结已经写的段落，
-     而是把这个条目的设定**补完整**，好让后续每次生成都有据可依。 */
+  /* ── 设定补全：**记录，不是创作** ──
+     上一版这里写的是"原文没写就以常理补足"，结果模型开始自由发挥，
+     给角色乱加外貌、乱编关系 —— 既不像话又白烧 token。
+     现在只有一个动作：把正文里已经写到的信息摘出来。正文没写的，一个字都不加。 */
   const KIND_GUIDE = {
-    人物: ['外貌', '脾气', '口癖', '和主角的关系'],
+    人物: ['容貌', '身材', '性格', '说话习惯', '和别人的关系'],
     地点: ['位置与环境', '不同时段的样子', '气氛'],
     物件: ['外形与材质', '来历', '作用'],
     规则: ['内容', '适用范围', '限制', '代价'],
@@ -2172,44 +2189,35 @@ const AI = (() => {
   };
 
   function buildEnrichMessages(setting, opts = {}) {
-    const kind = setting.kind || '设定';
-    const dims = KIND_GUIDE[kind] || KIND_GUIDE.设定;
+    const kind = setting.kind || '人物';
+    const dims = KIND_GUIDE[kind] || KIND_GUIDE.人物;
     const bk = Store.books.current();
-
-    // 已有的人与地，用来保持一致
-    const others = Store.setting.all()
-      .filter((s) => s.id !== setting.id && s.name !== setting.name && (s.desc || '').trim())
-      .slice(0, 14)
-      .map((s) => `· ${s.name}〔${s.kind}〕：${cutHead(s.desc, 90)}`)
-      .join('\n');
-
-    const lines = Store.line.all().filter((l) => l.status !== '已收束').slice(0, 8)
-      .map((l) => `· ${l.name}${l.desc ? '：' + cutHead(l.desc, 70) : ''}`).join('\n');
-
-    const seen = (setting.quotes || []).filter(Boolean).slice(0, 4);
+    const seen = (setting.quotes || []).filter(Boolean).slice(0, 6);
 
     const sys = [
-      '你是小说设定师。作者正在写一部长篇，你需要为一条设定写出**可以直接拿去用**的完整内容。',
-      '你写的会成为后续每次写作的依据，所以要具体、能演出来，不要空泛的形容。',
+      '你是小说设定**记录员**，不是作者。',
       '',
-      '规则：',
-      `· 只写这 ${dims.length} 项，每项一行，格式是「· 项目：内容」`,
-      `· 每一项都要落到可感的细节上（外貌写身型/穿着/身体特征；脾气写遇到某类事会怎么反应；口癖写他真会说的短句）`,
-      '· 和已有设定保持一致，不要冲突，不要抢已有角色的功能',
-      '· 不要复述剧情，不要出现「在文中」「故事里」「本章」这类话',
-      '· 不要写解释、不要写标题、不要用 markdown 标记',
-      '· 名字本身已经给了，不要再重复"这个名字"',
+      '**唯一任务：把正文里已经写到的信息摘出来，整理成条目。**',
+      '· 只写下面【正文片段】里明确出现过的内容',
+      '· **没写到的项，整行省略**（不要写"未提及""暂无"，不要推测，不要补全）',
+      '· 严禁编造：外貌、身材、经历、关系、性格，正文没写就一律不写',
+      '· 不许用「可能」「似乎」「大概」「应该是」这类猜测口气',
+      '· 每项一行，格式「· 项目：内容」，一句话说完，不要展开',
+      '· 不要标题、不要解释、不要分点套分点、不要 markdown 标记',
+      '',
+      '如果正文里关于这个条目几乎什么都没写，就**只输出一行或直接输出「（正文暂无）」**。宁可少写，不许编。',
     ].join('\n');
 
     const user = [
-      `【作品】《${bk.title}》${bk.genre ? ' · ' + bk.genre : ''}${bk.desc ? '\n' + cutHead(bk.desc, 160) : ''}`,
-      others ? `【已有的设定（保持一致）】\n${others}` : '',
-      lines ? `【进行中的世界线】\n${lines}` : '',
-      seen.length ? `【他/它在正文里出现过的样子（仅供参考，不必拘泥）】\n${seen.map((q) => '· ' + q).join('\n')}` : '',
-      `【这次要写的条目】\n${setting.name}（${kind}）`,
+      `【作品】《${bk.title}》${bk.genre ? ' · ' + bk.genre : ''}`,
+      `【条目】${setting.name}（${kind}）`,
+      `需要留意的项：${dims.join(' / ')}（正文写了哪项就记哪项）`,
+      seen.length
+        ? `【正文片段（这是唯一依据）】\n${seen.map((q) => '· ' + q).join('\n')}`
+        : '【正文片段】（空）',
       '',
-      `请写出这个${kind}的：${dims.join('、')}。`,
-    ].filter(Boolean).join('\n\n');
+      '请只根据上面的片段，摘出这个条目的信息。',
+    ].join('\n\n');
 
     return [{ role: 'system', content: sys }, { role: 'user', content: user }];
   }
@@ -3533,20 +3541,26 @@ const ChatView = (() => {
     absorbNames(m.text);
   }
 
-  /* ── 新名字：静默吸收 ──
-     作者要的是"先立住人、再写剧情"，所以入库与补全都不打扰他：
-     不弹窗、不 toast、不问要不要保存。他写完自己去设定页看就行。 */
+  /* ── 新名字：静默收录 ──
+     作者要的是"先立住人、再写剧情"，所以入库与补全都不打扰他。
+     但**只收有戏份的**：露一面的路人、一次性的地名不收 —— 收进来也是垃圾。
+     补全用的依据只有正文原句，模型只做摘录，正文没写的不许编。 */
   function absorbNames(text) {
     if (Store.get().config.autoSetting === false) return;
     let names = [];
     try { names = AI.findNewNames(text); } catch (_) { return; }
     if (!names.length) return;
 
-    const PLACE = /(村|镇|城|街|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|路|道|谷|原|岛|洲|关|驿|站|楼)$/;
-    const ids = names.slice(0, 4).map((x) => Store.setting.add({
+    // 至少出现 3 次才算"这个角色有戏"，一次两次的是路人
+    const main = names.filter((x) => x.n >= 3);
+    if (!main.length) return;
+
+    const PLACE = /(村|镇|城|街|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|路|道|谷|原|岛|洲|关|驿|站)$/;
+    const ids = main.slice(0, 2).map((x) => Store.setting.add({   // 一次最多两条，省 token
       kind: PLACE.test(x.name) ? '地点' : '人物',
       name: x.name,
       desc: '',
+      quotes: x.quotes || [],
       auto: true,
     }).id);
 
@@ -3942,14 +3956,15 @@ const WorldView = (() => {
     </div>`;
   }
 
-  /* ── 静默把一条设定补完整 ──
-     作者要的是"先立住人再写剧情"，所以这件事不该让他看见：
-     没有按钮、没有弹窗、没有进度条，写完之后他自己去设定页看就行。 */
+  /* ── 静默把一条设定的信息摘出来 ──
+     只做一件事：把正文里已经写到的摘出来。正文没写的，一个字都不加。
+     所以——没有正文依据就根本不调用模型，省 token。 */
   async function fill(id) {
     const s = Store.setting.all().find((x) => x.id === id);
     if (!s) return null;
-    if (s.desc && s.desc.trim()) return null;         // 已有内容不动
-    if (!Store.config.ready()) return null;            // 没配模型就安静跳过
+    if (s.desc && s.desc.trim()) return null;                  // 已有内容不动
+    if (!s.quotes || !s.quotes.length) return null;             // 没有正文依据 → 不写，不花 token
+    if (!Store.config.ready()) return null;                     // 没配模型就安静跳过
     try {
       let acc = '';
       const txt = await AI.generate({
@@ -3957,11 +3972,11 @@ const WorldView = (() => {
         onDelta: (p) => { acc += p; },
       });
       const out = (txt || acc).trim();
-      if (!out) return null;
+      if (!out || /^（?正文暂无）?$/.test(out)) return null;      // 模型说没什么可记，就别留空条目
       Store.setting.update(id, { desc: out, auto: true });
       return out;
     } catch (e) {
-      console.warn('[设定] 自动补全失败（不影响写作）', e);
+      console.warn('[设定] 摘录失败（不影响写作）', e);
       return null;
     }
   }
@@ -4822,14 +4837,37 @@ const App = (() => {
       <div class="sec-title">存档</div>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
+      <div class="sec-title">清理</div>
+      <button class="navrow" id="vaCleanAuto">
+        <span class="navrow__k">删掉自动收录的</span>
+        <span class="navrow__v">你自己加的会留下</span>
+      </button>
+      <button class="navrow navrow--danger" id="vaCleanAll">
+        <span class="navrow__k">清空全部设定</span>
+        <span class="navrow__v">世界线不受影响</span>
+      </button>
       <div class="field__hint" style="margin-top:14px">
-        写到新的人物或地点时，系统会在后台自动收录并把说明写完整，不需要你操作。
-        不想要这个行为，可以在设置里关掉。
+        写到有戏份的新角色时，系统会把它收进设定，并**只把正文里已经写到的**信息摘出来
+        —— 正文没写的不许编。不想要这个行为，可以在设置里关掉。
       </div>
       ${globalRows()}
     `, (r) => {
       r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
+      r.querySelector('#vaCleanAuto').onclick = () => {
+        const n = Store.setting.all().filter((s) => s.auto).length;
+        if (!n) return toast('没有自动收录的条目');
+        if (!confirm(`删掉 ${n} 条自动收录的设定？你自己加的会留下。`)) return;
+        const gone = Store.setting.clearAuto();
+        closeSheet(); renderAll(); toast(`已删掉 ${gone} 条`);
+      };
+      r.querySelector('#vaCleanAll').onclick = () => {
+        const n = Store.setting.all().length;
+        if (!n) return toast('设定是空的');
+        if (!confirm(`清空全部 ${n} 条设定？此操作不可撤销。`)) return;
+        Store.setting.clearAll();
+        closeSheet(); renderAll(); toast('已清空设定');
+      };
       r.querySelector('#vaWorldExp').onclick = () => {
         const bk = Store.books.current();
         download((bk.title || '临文录') + '-设定.json',

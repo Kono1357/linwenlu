@@ -672,14 +672,37 @@ const App = (() => {
       <div class="sec-title">存档</div>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
+      <div class="sec-title">清理</div>
+      <button class="navrow" id="vaCleanAuto">
+        <span class="navrow__k">删掉自动收录的</span>
+        <span class="navrow__v">你自己加的会留下</span>
+      </button>
+      <button class="navrow navrow--danger" id="vaCleanAll">
+        <span class="navrow__k">清空全部设定</span>
+        <span class="navrow__v">世界线不受影响</span>
+      </button>
       <div class="field__hint" style="margin-top:14px">
-        写到新的人物或地点时，系统会在后台自动收录并把说明写完整，不需要你操作。
-        不想要这个行为，可以在设置里关掉。
+        写到有戏份的新角色时，系统会把它收进设定，并**只把正文里已经写到的**信息摘出来
+        —— 正文没写的不许编。不想要这个行为，可以在设置里关掉。
       </div>
       ${globalRows()}
     `, (r) => {
       r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
+      r.querySelector('#vaCleanAuto').onclick = () => {
+        const n = Store.setting.all().filter((s) => s.auto).length;
+        if (!n) return toast('没有自动收录的条目');
+        if (!confirm(`删掉 ${n} 条自动收录的设定？你自己加的会留下。`)) return;
+        const gone = Store.setting.clearAuto();
+        closeSheet(); renderAll(); toast(`已删掉 ${gone} 条`);
+      };
+      r.querySelector('#vaCleanAll').onclick = () => {
+        const n = Store.setting.all().length;
+        if (!n) return toast('设定是空的');
+        if (!confirm(`清空全部 ${n} 条设定？此操作不可撤销。`)) return;
+        Store.setting.clearAll();
+        closeSheet(); renderAll(); toast('已清空设定');
+      };
       r.querySelector('#vaWorldExp').onclick = () => {
         const bk = Store.books.current();
         download((bk.title || '临文录') + '-设定.json',

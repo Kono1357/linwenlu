@@ -122,14 +122,15 @@ const WorldView = (() => {
     </div>`;
   }
 
-  /* ── 静默把一条设定补完整 ──
-     作者要的是"先立住人再写剧情"，所以这件事不该让他看见：
-     没有按钮、没有弹窗、没有进度条，写完之后他自己去设定页看就行。 */
+  /* ── 静默把一条设定的信息摘出来 ──
+     只做一件事：把正文里已经写到的摘出来。正文没写的，一个字都不加。
+     所以——没有正文依据就根本不调用模型，省 token。 */
   async function fill(id) {
     const s = Store.setting.all().find((x) => x.id === id);
     if (!s) return null;
-    if (s.desc && s.desc.trim()) return null;         // 已有内容不动
-    if (!Store.config.ready()) return null;            // 没配模型就安静跳过
+    if (s.desc && s.desc.trim()) return null;                  // 已有内容不动
+    if (!s.quotes || !s.quotes.length) return null;             // 没有正文依据 → 不写，不花 token
+    if (!Store.config.ready()) return null;                     // 没配模型就安静跳过
     try {
       let acc = '';
       const txt = await AI.generate({
@@ -137,11 +138,11 @@ const WorldView = (() => {
         onDelta: (p) => { acc += p; },
       });
       const out = (txt || acc).trim();
-      if (!out) return null;
+      if (!out || /^（?正文暂无）?$/.test(out)) return null;      // 模型说没什么可记，就别留空条目
       Store.setting.update(id, { desc: out, auto: true });
       return out;
     } catch (e) {
-      console.warn('[设定] 自动补全失败（不影响写作）', e);
+      console.warn('[设定] 摘录失败（不影响写作）', e);
       return null;
     }
   }

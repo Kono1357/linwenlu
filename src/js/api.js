@@ -231,11 +231,12 @@ const AI = (() => {
     ];
   }
 
-  /* ── 设定生成：写「人设卡」，不是归纳原文 ──
-     作者要的是"先立住人，再写剧情"，所以这里不是在总结已经写的段落，
-     而是把这个条目的设定**补完整**，好让后续每次生成都有据可依。 */
+  /* ── 设定补全：**记录，不是创作** ──
+     上一版这里写的是"原文没写就以常理补足"，结果模型开始自由发挥，
+     给角色乱加外貌、乱编关系 —— 既不像话又白烧 token。
+     现在只有一个动作：把正文里已经写到的信息摘出来。正文没写的，一个字都不加。 */
   const KIND_GUIDE = {
-    人物: ['外貌', '脾气', '口癖', '和主角的关系'],
+    人物: ['容貌', '身材', '性格', '说话习惯', '和别人的关系'],
     地点: ['位置与环境', '不同时段的样子', '气氛'],
     物件: ['外形与材质', '来历', '作用'],
     规则: ['内容', '适用范围', '限制', '代价'],
@@ -243,44 +244,35 @@ const AI = (() => {
   };
 
   function buildEnrichMessages(setting, opts = {}) {
-    const kind = setting.kind || '设定';
-    const dims = KIND_GUIDE[kind] || KIND_GUIDE.设定;
+    const kind = setting.kind || '人物';
+    const dims = KIND_GUIDE[kind] || KIND_GUIDE.人物;
     const bk = Store.books.current();
-
-    // 已有的人与地，用来保持一致
-    const others = Store.setting.all()
-      .filter((s) => s.id !== setting.id && s.name !== setting.name && (s.desc || '').trim())
-      .slice(0, 14)
-      .map((s) => `· ${s.name}〔${s.kind}〕：${cutHead(s.desc, 90)}`)
-      .join('\n');
-
-    const lines = Store.line.all().filter((l) => l.status !== '已收束').slice(0, 8)
-      .map((l) => `· ${l.name}${l.desc ? '：' + cutHead(l.desc, 70) : ''}`).join('\n');
-
-    const seen = (setting.quotes || []).filter(Boolean).slice(0, 4);
+    const seen = (setting.quotes || []).filter(Boolean).slice(0, 6);
 
     const sys = [
-      '你是小说设定师。作者正在写一部长篇，你需要为一条设定写出**可以直接拿去用**的完整内容。',
-      '你写的会成为后续每次写作的依据，所以要具体、能演出来，不要空泛的形容。',
+      '你是小说设定**记录员**，不是作者。',
       '',
-      '规则：',
-      `· 只写这 ${dims.length} 项，每项一行，格式是「· 项目：内容」`,
-      `· 每一项都要落到可感的细节上（外貌写身型/穿着/身体特征；脾气写遇到某类事会怎么反应；口癖写他真会说的短句）`,
-      '· 和已有设定保持一致，不要冲突，不要抢已有角色的功能',
-      '· 不要复述剧情，不要出现「在文中」「故事里」「本章」这类话',
-      '· 不要写解释、不要写标题、不要用 markdown 标记',
-      '· 名字本身已经给了，不要再重复"这个名字"',
+      '**唯一任务：把正文里已经写到的信息摘出来，整理成条目。**',
+      '· 只写下面【正文片段】里明确出现过的内容',
+      '· **没写到的项，整行省略**（不要写"未提及""暂无"，不要推测，不要补全）',
+      '· 严禁编造：外貌、身材、经历、关系、性格，正文没写就一律不写',
+      '· 不许用「可能」「似乎」「大概」「应该是」这类猜测口气',
+      '· 每项一行，格式「· 项目：内容」，一句话说完，不要展开',
+      '· 不要标题、不要解释、不要分点套分点、不要 markdown 标记',
+      '',
+      '如果正文里关于这个条目几乎什么都没写，就**只输出一行或直接输出「（正文暂无）」**。宁可少写，不许编。',
     ].join('\n');
 
     const user = [
-      `【作品】《${bk.title}》${bk.genre ? ' · ' + bk.genre : ''}${bk.desc ? '\n' + cutHead(bk.desc, 160) : ''}`,
-      others ? `【已有的设定（保持一致）】\n${others}` : '',
-      lines ? `【进行中的世界线】\n${lines}` : '',
-      seen.length ? `【他/它在正文里出现过的样子（仅供参考，不必拘泥）】\n${seen.map((q) => '· ' + q).join('\n')}` : '',
-      `【这次要写的条目】\n${setting.name}（${kind}）`,
+      `【作品】《${bk.title}》${bk.genre ? ' · ' + bk.genre : ''}`,
+      `【条目】${setting.name}（${kind}）`,
+      `需要留意的项：${dims.join(' / ')}（正文写了哪项就记哪项）`,
+      seen.length
+        ? `【正文片段（这是唯一依据）】\n${seen.map((q) => '· ' + q).join('\n')}`
+        : '【正文片段】（空）',
       '',
-      `请写出这个${kind}的：${dims.join('、')}。`,
-    ].filter(Boolean).join('\n\n');
+      '请只根据上面的片段，摘出这个条目的信息。',
+    ].join('\n\n');
 
     return [{ role: 'system', content: sys }, { role: 'user', content: user }];
   }

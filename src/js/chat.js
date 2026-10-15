@@ -531,20 +531,26 @@ const ChatView = (() => {
     absorbNames(m.text);
   }
 
-  /* ── 新名字：静默吸收 ──
-     作者要的是"先立住人、再写剧情"，所以入库与补全都不打扰他：
-     不弹窗、不 toast、不问要不要保存。他写完自己去设定页看就行。 */
+  /* ── 新名字：静默收录 ──
+     作者要的是"先立住人、再写剧情"，所以入库与补全都不打扰他。
+     但**只收有戏份的**：露一面的路人、一次性的地名不收 —— 收进来也是垃圾。
+     补全用的依据只有正文原句，模型只做摘录，正文没写的不许编。 */
   function absorbNames(text) {
     if (Store.get().config.autoSetting === false) return;
     let names = [];
     try { names = AI.findNewNames(text); } catch (_) { return; }
     if (!names.length) return;
 
-    const PLACE = /(村|镇|城|街|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|路|道|谷|原|岛|洲|关|驿|站|楼)$/;
-    const ids = names.slice(0, 4).map((x) => Store.setting.add({
+    // 至少出现 3 次才算"这个角色有戏"，一次两次的是路人
+    const main = names.filter((x) => x.n >= 3);
+    if (!main.length) return;
+
+    const PLACE = /(村|镇|城|街|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|路|道|谷|原|岛|洲|关|驿|站)$/;
+    const ids = main.slice(0, 2).map((x) => Store.setting.add({   // 一次最多两条，省 token
       kind: PLACE.test(x.name) ? '地点' : '人物',
       name: x.name,
       desc: '',
+      quotes: x.quotes || [],
       auto: true,
     }).id);
 

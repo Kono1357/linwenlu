@@ -783,25 +783,50 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
-    // ㉛ 设定自动收录：静默入库，不问不提示
+    // ㉛ 设定收录：只收有戏份的，露一面的路人不收
     report.steps.push({
       step: 'autoset', check: await cdp.eval(`(function(){
       try {
         Store.setting.all().slice().forEach(function(s){ Store.setting.remove(s.id); });
-        var before = Store.setting.all().length;
-        // 模拟"刚写完一段"：直接调用静默收录（用没进过忽略名单的名字）
-        ChatView.absorbNames('陆沉推开门。白露抬头看了他一眼。陆沉没说话。白露也没说话。陆沉走了。');
-        var after = Store.setting.all().length;
-        var kinds = Store.setting.all().map(function(s){ return s.name + '[' + s.kind + ']'; });
-        // 地名要能按后缀认出来
-        ChatView.absorbNames('陆沉推开门。青石巷那边起了雾。陆沉走了两步。青石巷很静。陆沉停下。');
-        var kinds2 = Store.setting.all().map(function(s){ return s.name + '[' + s.kind + ']'; });
+        // 有戏份的主要角色：各出现 3 次以上
+        ChatView.absorbNames('陆沉推开门。白露抬头看了他一眼。陆沉没说话。白露也没说话。陆沉走了。白露站着没动。');
+        var main = Store.setting.all().map(function(s){ return s.name + '[' + s.kind + ']'; });
+
+        // 路过的：只出现一两次，不该收
+        Store.setting.all().slice().forEach(function(s){ Store.setting.remove(s.id); });
+        ChatView.absorbNames('沈砚推开门。周砚白抬头看了他一眼。沈砚没说话。');
+        var passerby = Store.setting.all().length;
+
+        // 地名：够戏份才收，且按后缀认类别
+        Store.setting.all().slice().forEach(function(s){ Store.setting.remove(s.id); });
+        ChatView.absorbNames('青石巷那边起了雾。青石巷很静。青石巷没有人。陆沉走进青石巷。陆沉停下。青石巷尽头有灯。');
+        var place = Store.setting.all().map(function(s){ return s.name + '[' + s.kind + ']'; });
+
         return {
-          入库前: before,
-          入库后: after,
-          收进来的: kinds.join('、'),
-          认出地点: kinds2.join('、'),
-          没弹任何窗: document.getElementById('sheet').hidden
+          有戏份的收进来: main.join('、'),
+          露一面的不收: passerby === 0,
+          地名认得对: place.join('、') || '（没收）',
+          没弹窗: document.getElementById('sheet').hidden
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉛ᐟ 摘录模式：正文没写的，一个字都不许多
+    report.steps.push({
+      step: 'extractonly', check: await cdp.eval(`(function(){
+      try {
+        var s = { kind: '人物', name: '陆沉', quotes: ['陆沉推开门，他个子很高，进门时低了下头。', '「来晚了。」陆沉说。'] };
+        var msgs = AI.buildEnrichMessages(s);
+        var sys = msgs[0].content, user = msgs[1].content;
+        var both = sys + user;
+        return {
+          禁止编造: /严禁编造/.test(sys),
+          没写的要省略: /整行省略|没写到的项/.test(sys),
+          不许猜: /不许用「可能」/.test(sys),
+          依据只有正文: /唯一依据/.test(user),
+          正文片段带上了: /个子很高/.test(user),
+          没有常理补足: !/常理/.test(both),
+          没有写完整: !/写完整|补完整/.test(both)
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
