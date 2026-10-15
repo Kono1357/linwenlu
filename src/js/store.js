@@ -37,6 +37,7 @@ const Store = (() => {
         ctxTail: 1200,
         commitMode: 'ask',      // ask（每次问）| auto（自动续接）
         lastCommit: 'append',   // 上次选的写入方式，下次排在第一位
+        targetWords: 800,       // 每次生成的目标字数（0 = 不要求）
       },
     };
   }
@@ -84,6 +85,7 @@ const Store = (() => {
       kind: str(s && s.kind, '设定'),
       name: str(s && s.name, '未命名'),
       desc: str(s && s.desc),
+      quotes: arr(s && s.quotes).map(String).filter(Boolean).slice(0, 6),
       at: num(s && s.at, Date.now()),
     }));
 
@@ -247,10 +249,24 @@ const Store = (() => {
 
   const setting = {
     all: () => state.settings,
-    add({ kind = '设定', name = '', desc = '' } = {}) {
-      const s = { id: uid(), kind, name, desc, at: Date.now() };
+    add({ kind = '设定', name = '', desc = '', quotes = [] } = {}) {
+      const s = {
+        id: uid(), kind, name, desc,
+        quotes: arr(quotes).map(String).filter(Boolean).slice(0, 6),
+        at: Date.now(),
+      };
       state.settings.unshift(s);
       touch('setting-add', s);
+      return s;
+    },
+    /** 把正文里的原句追加成「佐证」，去重后最多留 6 条 */
+    addQuotes(id, lines) {
+      const s = state.settings.find((x) => x.id === id);
+      if (!s) return null;
+      const set = new Set(s.quotes || []);
+      arr(lines).forEach((l) => { const t = String(l).trim(); if (t) set.add(t); });
+      s.quotes = [...set].slice(-6);
+      touch('setting-update', s);
       return s;
     },
     update(id, patch) {

@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-15 21:50 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-15 23:24 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -583,6 +583,40 @@ input[type="number"] { font-family: var(--mono); }
 }
 .buildstamp .mini-btn { font-family: var(--ui); }
 
+/* 对话段落列表：每次生成是一段，可各自处理 */
+.segrow { padding: 11px 0; border-bottom: 1px solid var(--line); }
+.segrow.is-on { background: rgba(201,162,39,.07); }
+.segrow__hd { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 11px; }
+.segrow__len { color: var(--ink-3); font-family: var(--mono); }
+.segrow__ch { color: var(--ink-3); }
+.segrow__tag { color: var(--green); }
+.segrow__txt {
+  font-size: 13px; color: var(--ink-2); line-height: 1.65;
+  font-family: var(--serif); margin-bottom: 8px;
+}
+.segrow__acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* 消息上的字数 */
+.msg__len { margin-left: 7px; font-size: 10.5px; color: var(--ink-3); font-family: var(--mono); }
+.msg__len.is-short { color: var(--gold-2); }
+
+/* 新名字的证据句 */
+.nameblock { border-bottom: 1px solid var(--line); }
+.nameblock .namerow { border-bottom: none; }
+.namequote {
+  padding: 0 0 11px 27px;
+  font-size: 12px; color: var(--ink-3); line-height: 1.8;
+  font-family: var(--serif);
+}
+
+/* 设定里的正文佐证 */
+.quotebox {
+  padding: 10px 12px; border-radius: var(--r);
+  background: var(--bg); border: 1px dashed var(--line-2);
+  font-size: 12.5px; color: var(--ink-2); line-height: 1.85;
+  font-family: var(--serif); max-height: 26vh; overflow: auto;
+}
+
 /* ─────────── Toast ─────────── */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
@@ -718,7 +752,7 @@ body.is-stream .reader__head { display: none; }
   .selbar { bottom: 10px; }
 }
 </style>
-<meta name="build" content="2026-10-15 21:50">
+<meta name="build" content="2026-10-15 23:24">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -767,6 +801,7 @@ body.is-stream .reader__head { display: none; }
       <article class="reader" id="reader" tabindex="0"></article>
       <div class="selbar" id="selbar" hidden>
         <span class="selbar__label">选中 <b id="selCount">0</b> 字</span>
+        <button class="mini-btn" data-sel="from">续写</button>
         <button class="mini-btn" data-sel="rewrite">改写</button>
         <button class="mini-btn" data-sel="expand">扩写</button>
         <button class="mini-btn" data-sel="ask">提问</button>
@@ -899,6 +934,7 @@ const Store = (() => {
         ctxTail: 1200,
         commitMode: 'ask',      // ask（每次问）| auto（自动续接）
         lastCommit: 'append',   // 上次选的写入方式，下次排在第一位
+        targetWords: 800,       // 每次生成的目标字数（0 = 不要求）
       },
     };
   }
@@ -946,6 +982,7 @@ const Store = (() => {
       kind: str(s && s.kind, '设定'),
       name: str(s && s.name, '未命名'),
       desc: str(s && s.desc),
+      quotes: arr(s && s.quotes).map(String).filter(Boolean).slice(0, 6),
       at: num(s && s.at, Date.now()),
     }));
 
@@ -1109,10 +1146,24 @@ const Store = (() => {
 
   const setting = {
     all: () => state.settings,
-    add({ kind = '设定', name = '', desc = '' } = {}) {
-      const s = { id: uid(), kind, name, desc, at: Date.now() };
+    add({ kind = '设定', name = '', desc = '', quotes = [] } = {}) {
+      const s = {
+        id: uid(), kind, name, desc,
+        quotes: arr(quotes).map(String).filter(Boolean).slice(0, 6),
+        at: Date.now(),
+      };
       state.settings.unshift(s);
       touch('setting-add', s);
+      return s;
+    },
+    /** 把正文里的原句追加成「佐证」，去重后最多留 6 条 */
+    addQuotes(id, lines) {
+      const s = state.settings.find((x) => x.id === id);
+      if (!s) return null;
+      const set = new Set(s.quotes || []);
+      arr(lines).forEach((l) => { const t = String(l).trim(); if (t) set.add(t); });
+      s.quotes = [...set].slice(-6);
+      touch('setting-update', s);
       return s;
     },
     update(id, patch) {
@@ -1336,8 +1387,10 @@ const AI = (() => {
     return chunks.some((w) => hay.includes(w));
   }
 
-  /* ── 装配上下文：返回 {sections:[{key,title,text}], text} ── */
-  function buildContext(ask, chapterId) {
+  /* ── 装配上下文：返回 {sections:[{key,title,text}], text} ──
+     baseText 有值时用它替换「本章已写」那一段 ——
+     这是「以某一段为起点续写」的关键：基线可以不是章末，而是任意一段。 */
+  function buildContext(ask, chapterId, baseText) {
     const st = Store.get();
     const cfg = st.config;
     const c = chapterId ? Store.chapter.by(chapterId) : Store.chapter.active();
@@ -1399,8 +1452,14 @@ const AI = (() => {
       }
     }
 
-    // 本章已写
-    if (c) {
+    // 已写内容：默认取本章末尾；指定了基线就用基线那一段
+    if (baseText && baseText.trim()) {
+      sections.push({
+        key: 'cur',
+        title: '续写基线（从这里接着往下写）',
+        text: cut(baseText, Math.max(200, cfg.ctxTail | 0)),
+      });
+    } else if (c) {
       const ct = Store.chapter.textOf(c);
       if (ct.trim()) sections.push({ key: 'cur', title: `本章已写 · ${c.title}`, text: cut(ct, Math.max(200, cfg.ctxTail | 0)) });
       else sections.push({ key: 'cur', title: `本章 · ${c.title}`, text: '（还没写）' });
@@ -1412,16 +1471,23 @@ const AI = (() => {
 
   /* ── 组装 messages ── */
   function buildMessages(opts) {
-    const { ask, chapterId, mode = 'chat', extra = '' } = opts;
-    const ctx = buildContext(ask, chapterId);
+    const { ask, chapterId, mode = 'chat', extra = '', baseText = '' } = opts;
+    const ctx = buildContext(ask, chapterId, baseText);
     const st = Store.get();
 
     const modeRule = {
       continue: '写作模式：接着本章已有内容往下写。只输出正文本身，不要标题、不要解释、不要点评。',
+      from: '写作模式：接着给定的「续写基线」那一段往下写，保持同一场景、同一语气、同一批人物。只输出正文本身，不要标题、不要解释。',
       rewrite: '改写模式：按作者要求改写给定的原文。只输出改写后的正文，不要解释。',
       outline: '规划模式：为本章给出 3—6 条要点（一行一条，以「· 」开头），每条一句话，说明这一章要发生什么。不要写正文。',
       chat: '对话模式：先直接回答作者的问题；如果作者在要正文，就按续写的方式给出正文。',
     }[mode] || '';
+
+    // 字数要求：不写清，模型就会草草收尾
+    const tw = Number(st.config.targetWords) || 0;
+    const lenRule = (tw > 0 && (mode === 'continue' || mode === 'from' || mode === 'chat'))
+      ? `本次目标约 ${tw} 字。一次写够，不要提前收尾，也不要用重复句凑字数；`
+      : '';
 
     const sys = [
       `你是长篇小说写作助手，正在协助作者创作《${st.book.title}》。`,
@@ -1430,11 +1496,13 @@ const AI = (() => {
       '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
       '需要有新角色出场时，先从人物表里挑最合适的那个，表里确实没有才新建，',
       '并且同一个角色前后的称呼必须保持一致，不要用"某个人""一个男人"这类泛称代替已有角色。',
+      lenRule,
       modeRule,
     ].filter(Boolean).join('\n');
 
     const userParts = [ctx.text];
     if (extra) userParts.push(`【选中原文】\n${extra}`);
+    if (baseText && baseText.trim()) userParts.push(`【从这一段接着写】\n${baseText.trim()}`);
     userParts.push(`【作者要求】\n${ask || '（无具体要求，按上文续写）'}`);
 
     // 最近对话（只带 4 轮，省 token）
@@ -1559,35 +1627,53 @@ const AI = (() => {
   const STOP = new Set(['黄金', '白天', '马上', '高大', '温柔', '江南', '风景', '行李', '手掌', '树木', '花样', '毛病', '程度', '程序', '的确', '仿佛', '石头', '安静', '常常', '通常', '平静', '外面', '上面', '下面', '里面', '前面', '后面', '旁边', '周围', '对方', '结果', '原因', '情况', '时候', '地方', '东西', '事情', '样子', '心里', '眼神', '声音', '问题', '办法', '世界', '人生', '男人', '女人', '孩子', '老人', '学生', '老师', '医生', '警察', '老板', '经理', '司机', '服务',
     '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数']);
 
+  /**
+   * 从正文里认名字，并带回「证据句」——
+   * 只有名字没用，设定要能长出内容，所以把这个人出现过的原句一起带出来。
+   * 返回 [{ name, n, quotes:[原句…] }]
+   */
   function extractNames(text, known) {
     const src = String(text || '');
     if (src.length < 12) return [];
     const knownSet = new Set(known || []);
     const count = new Map();
+    const quotes = new Map();
 
-    for (let i = 0; i < src.length; i++) {
-      if (SURNAMES.indexOf(src[i]) < 0) continue;
-      // 词首约束：要么开头，要么前面不是汉字
-      if (i > 0 && /[\u4e00-\u9fa5]/.test(src[i - 1])) continue;
+    const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
 
-      let name = null;
-      for (const len of [3, 2]) {          // 先试三字，末字是虚词就退回两字
-        const cand = src.slice(i, i + len);
-        if (cand.length < len) continue;
-        if (!/^[\u4e00-\u9fa5]+$/.test(cand)) continue;
-        if (STOPCHAR.has(cand[cand.length - 1])) continue;
-        name = cand;
-        break;
+    for (const sent of sentences) {
+      const seenHere = new Set();
+      for (let i = 0; i < sent.length; i++) {
+        if (SURNAMES.indexOf(sent[i]) < 0) continue;
+        if (i > 0 && /[\u4e00-\u9fa5]/.test(sent[i - 1])) continue;
+
+        let name = null;
+        for (const len of [3, 2]) {          // 先试三字，末字是虚词就退回两字
+          const cand = sent.slice(i, i + len);
+          if (cand.length < len) continue;
+          if (!/^[\u4e00-\u9fa5]+$/.test(cand)) continue;
+          if (STOPCHAR.has(cand[cand.length - 1])) continue;
+          name = cand;
+          break;
+        }
+        if (!name || STOP.has(name) || knownSet.has(name)) continue;
+
+        if (!seenHere.has(name)) {
+          seenHere.add(name);
+          count.set(name, (count.get(name) || 0) + 1);
+          const arr = quotes.get(name) || [];
+          if (arr.length < 3 && !arr.includes(sent)) arr.push(sent);
+          quotes.set(name, arr);
+        }
+        i += name.length - 1;
       }
-      if (!name || STOP.has(name) || knownSet.has(name)) continue;
-      count.set(name, (count.get(name) || 0) + 1);
     }
 
     return [...count.entries()]
       .filter(([, n]) => n >= 2)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
-      .map(([name, n]) => ({ name, n }));
+      .map(([name, n]) => ({ name, n, quotes: quotes.get(name) || [] }));
   }
 
   /** 扫一批文本，找出还没进设定的名字 */
@@ -1914,6 +2000,14 @@ const ReadView = (() => {
       const action = b.dataset.sel;
       const text = selText;
       clearSelection();
+
+      // 「续写」：直接以选中的这一段为基线，不用先切到别处
+      if (action === 'from') {
+        App.go('chat');
+        ChatView.setBaseText(text);
+        return;
+      }
+
       if (action === 'setting') {
         App.sheet('存为设定', `
           <div class="field">
@@ -1966,6 +2060,7 @@ const ChatView = (() => {
   let busy = false;
   let abort = null;
   let pendingExtra = null;   // { action, text } 来自「看剧情」的选中操作
+  let replyTo = null;        // { id, text } 续写基线：从哪一段接着写
 
   // 查找 / 筛选状态
   let findOn = false;
@@ -2008,17 +2103,35 @@ const ChatView = (() => {
   }
 
   function hint() {
+    const lines = [];
+
     if (pendingExtra) {
-      el.hint.innerHTML = `已带入选中原文（<b>${pendingExtra.text.length}</b> 字）：<b>${
-        { rewrite: '改写', expand: '扩写', ask: '提问' }[pendingExtra.action] || '操作'}</b> · <a href="#" id="dropExtra" style="color:var(--ink-3)">取消</a>`;
-      const d = el.hint.querySelector('#dropExtra');
-      if (d) d.onclick = (e) => { e.preventDefault(); pendingExtra = null; hint(); };
+      const act = { rewrite: '改写', expand: '扩写', ask: '提问' }[pendingExtra.action] || '操作';
+      lines.push(`已带入选中原文（<b>${pendingExtra.text.length}</b> 字）：<b>${act}</b> · <a href="#" data-drop="extra" style="color:var(--ink-3)">取消</a>`);
+    }
+    if (replyTo) {
+      const preview = replyTo.text.replace(/\s/g, '').slice(0, 18);
+      lines.push(`从这一段接着写：<b>${esc(preview)}…</b> · <a href="#" data-drop="base" style="color:var(--ink-3)">取消</a>`);
+    }
+
+    if (!lines.length) {
+      if (!AI_built()) {
+        el.hint.innerHTML = '还没配模型 —— <b>右上 ⚙ → 模型设置</b>';
+        return;
+      }
+      const c = target();
+      const n = c ? Store.chapter.textOf(c).length : 0;
+      const tw = Number(Store.get().config.targetWords) || 0;
+      el.hint.innerHTML = `将带入：作品 · 文风 · 设定 · 世界线${c && n ? ` · 本章已写 ${n} 字` : ''}${tw ? ` · 每次约 ${tw} 字` : ''}`;
       return;
     }
-    if (!AI_built()) { el.hint.innerHTML = '还没配模型 —— <b>右上 ⋯ → 模型设置</b>'; return; }
-    const c = target();
-    const n = c ? Store.chapter.textOf(c).length : 0;
-    el.hint.innerHTML = `将带入：作品 · 文风 · 设定 · 世界线${c && n ? ` · 本章已写 ${n} 字` : ''}`;
+
+    el.hint.innerHTML = lines.join('<br>');
+    el.hint.querySelectorAll('[data-drop]').forEach((a) => a.onclick = (e) => {
+      e.preventDefault();
+      if (a.dataset.drop === 'extra') { pendingExtra = null; hint(); }
+      else clearReplyTo();
+    });
   }
 
   const AI_built = () => Store.config.ready();
@@ -2107,14 +2220,24 @@ const ChatView = (() => {
   function msgHTML(m) {
     const who = m.role === 'me' ? '我' : (m.role === 'note' ? '·' : '临文');
     const cls = m.role === 'me' ? 'msg--me' : (m.role === 'note' ? 'msg--note' : 'msg--ai');
-    const acts = (m.role === 'ai' && !m.clipped) ? `
+    const len = m.text.replace(/\s/g, '').length;
+    const tw = Number(Store.get().config.targetWords) || 0;
+    const short = m.role === 'ai' && tw > 0 && len < tw * 0.85;
+    const lenTag = (m.role === 'ai')
+      ? `<span class="msg__len ${short ? 'is-short' : ''}">${len} 字${short ? ` · 差 ${tw - len}` : ''}</span>`
+      : '';
+    const isBase = replyTo && replyTo.id === m.id;
+    const acts = (m.role === 'ai') ? `
       <div class="msg__acts" data-acts="${m.id}">
-        <button class="mini-btn" data-act="commit">写入剧情</button>
+        ${m.clipped
+        ? '<span class="mini-btn is-on" style="cursor:default">已写入</span>'
+        : '<button class="mini-btn" data-act="commit">写入剧情</button>'}
+        <button class="mini-btn ${isBase ? 'is-on' : ''}" data-act="from">${isBase ? '续写基线 ✓' : '以这段续写'}</button>
         <button class="mini-btn" data-act="copy">复制</button>
-        <button class="mini-btn" data-act="setting">存为设定</button>
-      </div>` : (m.clipped ? `<div class="msg__acts"><span class="mini-btn is-on" style="cursor:default">已写入</span></div>` : '');
+        ${m.clipped ? '' : '<button class="mini-btn" data-act="setting">存为设定</button>'}
+      </div>` : '';
     return `<div class="msg ${cls}" data-msg="${m.id}">
-      <div class="msg__who">${who}</div>
+      <div class="msg__who">${who}${lenTag}</div>
       <div class="msg__body">${hl(m.text)}</div>
       ${acts}
     </div>`;
@@ -2151,6 +2274,8 @@ const ChatView = (() => {
             });
           } else if (b.dataset.act === 'commit') {
             openCommit(m);
+          } else if (b.dataset.act === 'from') {
+            setReplyTo(m);
           }
         };
       });
@@ -2161,6 +2286,84 @@ const ChatView = (() => {
     requestAnimationFrame(() => {
       el.flow.scrollTop = el.flow.scrollHeight;
       if (el.jump) el.jump.hidden = true;
+    });
+  }
+
+  /* ── 续写基线：从「某一段」接着写，而不是只能从章末 ── */
+  function setReplyTo(m) {
+    if (replyTo && replyTo.id === m.id) {
+      replyTo = null;
+      App.toast('已取消续写基线');
+    } else {
+      replyTo = { id: m.id, text: m.text };
+      App.toast('基线已设为这一段，接着说要写什么', 2400);
+    }
+    renderFlow();
+    hint();
+    el.input.focus();
+  }
+
+  /** 从「看剧情」选中一段直接设为基线 */
+  function setBaseText(text) {
+    const t = String(text || '').trim();
+    if (!t) return;
+    replyTo = { id: 'sel', text: t };
+    renderFlow();
+    hint();
+    el.input.focus();
+    App.toast('已把选中的这一段设为续写基线，接着说写什么', 2600);
+  }
+
+  function clearReplyTo(silent) {
+    if (!replyTo) return;
+    replyTo = null;
+    renderFlow();
+    hint();
+    if (!silent) App.toast('已取消续写基线');
+  }
+
+  /* ── 查看本章各段（问题：段落混在一起，没法单独处理）── */
+  function openSegments() {
+    const segs = Store.chat.all().filter((m) => m.role === 'ai');
+    if (!segs.length) return App.toast('还没有生成过内容');
+    App.sheet('对话里的段落', `
+      <div class="field__hint" style="margin-bottom:12px">
+        每次生成都是一段，可以各自处理。点「设为基线」就用它接着写。
+      </div>
+      ${segs.slice().reverse().map((m) => {
+      const c = m.chapterId ? Store.chapter.by(m.chapterId) : null;
+      const on = replyTo && replyTo.id === m.id;
+      const len = m.text.replace(/\s/g, '').length;
+      return `<div class="segrow ${on ? 'is-on' : ''}">
+          <div class="segrow__hd">
+            <span class="segrow__len">${len} 字</span>
+            ${c ? `<span class="segrow__ch">→ ${esc(c.title)}</span>` : '<span class="segrow__ch">未写入</span>'}
+            ${m.clipped ? '<span class="segrow__tag">已写入</span>' : ''}
+          </div>
+          <div class="segrow__txt">${esc(m.text.slice(0, 46))}…</div>
+          <div class="segrow__acts">
+            <button class="mini-btn ${on ? 'is-on' : ''}" data-base="${m.id}">${on ? '当前基线 ✓' : '设为基线'}</button>
+            <button class="mini-btn" data-goto="${m.id}">定位</button>
+            <button class="mini-btn" data-ins="${m.id}">写入剧情</button>
+          </div>
+        </div>`;
+    }).join('')}
+    `, (r) => {
+      r.querySelectorAll('[data-base]').forEach((b) => b.onclick = () => {
+        const m = Store.chat.all().find((x) => x.id === b.dataset.base);
+        if (m) { replyTo = { id: m.id, text: m.text }; }
+        App.closeSheet(); renderFlow(); hint(); App.toast('基线已设好');
+      });
+      r.querySelectorAll('[data-goto]').forEach((b) => b.onclick = () => {
+        App.closeSheet();
+        const node = document.querySelector(`[data-msg="${b.dataset.goto}"]`);
+        if (node) node.scrollIntoView({ block: 'center' });
+      });
+      r.querySelectorAll('[data-ins]').forEach((b) => b.onclick = () => {
+        const m = Store.chat.all().find((x) => x.id === b.dataset.ins);
+        App.closeSheet();
+        if (m) openCommit(m);
+      });
     });
   }
 
@@ -2239,21 +2442,26 @@ const ChatView = (() => {
     if (names.length) setTimeout(() => openNameSuggest(names), 900);
   }
 
-  /* ── 新名字入库 ── */
+  /* ── 新名字入库：连原句一起收进去，设定才有肉 ── */
   function openNameSuggest(names) {
     App.sheet('发现新名字', `
       <div class="field__hint" style="margin-bottom:12px">
-        这些名字在刚才那段里出现了两次以上，看起来是人物。<br>
-        存进设定之后，<b>以后每次生成都会自动带上他们</b>——不用再重复交代。
+        这些名字在刚才那段里反复出现。<br>
+        入库时会<b>把它们出现过的原句一并存成「正文佐证」</b>——以后要把设定写厚，就从这些句子里长。
       </div>
       ${names.map((n, i) => `
-        <div class="namerow">
-          <input type="checkbox" data-nm="${i}" checked style="width:17px;height:17px;accent-color:var(--gold)">
-          <span class="namerow__k">${esc(n.name)}</span>
-          <span class="namerow__n">出现 ${n.n} 次</span>
-          <select class="select" data-nk="${i}">
-            <option>人物</option><option>地点</option><option>物件</option><option>设定</option>
-          </select>
+        <div class="nameblock">
+          <div class="namerow">
+            <input type="checkbox" data-nm="${i}" checked style="width:17px;height:17px;accent-color:var(--gold)">
+            <span class="namerow__k">${esc(n.name)}</span>
+            <span class="namerow__n">${n.n} 处</span>
+            <select class="select" data-nk="${i}">
+              <option>人物</option><option>地点</option><option>物件</option><option>规则</option><option>设定</option>
+            </select>
+          </div>
+          ${(n.quotes && n.quotes.length)
+        ? `<div class="namequote">${n.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>`
+        : ''}
         </div>`).join('')}
       <button class="btn" id="nmSave" style="margin-top:16px">存进设定</button>
       <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用</button>
@@ -2265,12 +2473,12 @@ const ChatView = (() => {
           const cb = r.querySelector(`[data-nm="${i}"]`);
           if (!cb || !cb.checked) return;
           const kind = r.querySelector(`[data-nk="${i}"]`).value;
-          Store.setting.add({ kind, name: x.name, desc: '' });
+          Store.setting.add({ kind, name: x.name, desc: '', quotes: x.quotes || [] });
           n++;
         });
         App.closeSheet();
         if (WorldView) WorldView.render();
-        App.toast(n ? `已存进设定 ${n} 条，记得补一下说明` : '没有新增');
+        App.toast(n ? `已存进设定 ${n} 条（含正文佐证），可去补说明` : '没有新增', 2600);
       };
     });
   }
@@ -2279,13 +2487,13 @@ const ChatView = (() => {
   async function send(askOverride, modeOverride) {
     if (busy) return;
     const ask = (askOverride !== undefined ? askOverride : el.input.value).trim();
-    if (!ask && !pendingExtra) return;
-    if (!AI_built()) return App.toast('先配置模型（右上 ⋯）');
+    if (!ask && !pendingExtra && !replyTo) return;
+    if (!AI_built()) return App.toast('先配置模型（右上 ⚙）');
 
-    const mode = modeOverride || (pendingExtra
-      ? (pendingExtra.action === 'rewrite' ? 'rewrite' : 'continue')
-      : 'chat');
+    const mode = modeOverride || (replyTo ? 'from'
+      : (pendingExtra ? (pendingExtra.action === 'rewrite' ? 'rewrite' : 'continue') : 'chat'));
     const extra = pendingExtra ? pendingExtra.text : '';
+    const baseText = replyTo ? replyTo.text : '';
 
     busy = true;
     setSendState('stop');
@@ -2311,7 +2519,7 @@ const ChatView = (() => {
 
     try {
       const full = await AI.generate({
-        ask, chapterId: target() ? target().id : null, mode, extra,
+        ask, chapterId: target() ? target().id : null, mode, extra, baseText,
         signal: abort.signal,
         onDelta: (piece) => {
           if (first) { body.textContent = ''; first = false; }
@@ -2342,7 +2550,7 @@ const ChatView = (() => {
       } else {
         Store.chat.push('note', String(e && e.message || e));
         // 降级：给出可复制提示词
-        const p = AI.buildPromptOnly({ ask, chapterId: target() ? target().id : null, mode, extra });
+        const p = AI.buildPromptOnly({ ask, chapterId: target() ? target().id : null, mode, extra, baseText });
         openFallback(p);
       }
     } finally {
@@ -2512,7 +2720,7 @@ const ChatView = (() => {
 
   return {
     init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
-    toggleFind, openContext,
+    toggleFind, openContext, openSegments, setReplyTo, setBaseText, clearReplyTo,
   };
 })();
 
@@ -2694,6 +2902,12 @@ const WorldView = (() => {
         <label class="field__label">说明</label>
         <textarea class="textarea" id="stDesc" placeholder="越具体越好：外貌、脾气、口癖、和主角的关系">${esc(s ? s.desc : '')}</textarea>
       </div>
+      ${(s && s.quotes && s.quotes.length) ? `
+        <div class="field">
+          <label class="field__label">正文佐证（写的时候自动收的）</label>
+          <div class="quotebox" id="stQuotes">${s.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>
+          <button class="btn btn--ghost" id="stToDesc" style="margin-top:8px">拿这些句子起草说明</button>
+        </div>` : ''}
       <button class="btn" id="stSave">${s ? '保存' : '添加'}</button>
       ${s ? '<button class="btn btn--danger" id="stDel" style="margin-top:8px">删除</button>' : ''}
     `, (r) => {
@@ -2705,6 +2919,14 @@ const WorldView = (() => {
         };
         if (s) Store.setting.update(s.id, patch); else Store.setting.add(patch);
         App.closeSheet(); render(); App.toast(s ? '已保存' : '已添加');
+      };
+      const toDesc = r.querySelector('#stToDesc');
+      if (toDesc) toDesc.onclick = () => {
+        const ta = r.querySelector('#stDesc');
+        const cur = ta.value.trim();
+        const draft = (s.quotes || []).map((q) => q.replace(/[。！？]$/, '')).join('；');
+        ta.value = cur ? cur + '\n' + draft : draft;
+        ta.focus();
       };
       if (s) r.querySelector('#stDel').onclick = () => {
         if (!confirm('删除这条设定？')) return;
@@ -2901,6 +3123,12 @@ const App = (() => {
         <label class="field__label">文风约束</label>
         <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
       </div>
+      <div class="sec-title">每次写多少</div>
+      <div class="field">
+        <label class="field__label">目标字数（0 = 不要求）</label>
+        <input class="input" id="cfgWords" type="number" min="0" max="8000" step="100" value="${c.targetWords}">
+        <div class="field__hint">会写进系统提示，让模型一次写足；生成后字数不够会标出来提醒你继续。</div>
+      </div>
       <div class="sec-title">带入量（省 token）</div>
       <div class="row">
         <div class="field">
@@ -2943,6 +3171,7 @@ const App = (() => {
           ctxSettings: Number(g('#cfgSet').value) || 0,
           ctxTail: Number(g('#cfgTail').value) || 0,
           commitMode: cm ? cm.value : 'ask',
+          targetWords: Number(g('#cfgWords').value) || 0,
         });
         closeSheet(); ChatView.hint(); toast('已保存');
       };
@@ -3231,12 +3460,18 @@ const App = (() => {
     }
     if (cur === 'chat') {
       sheet('对话', `
+        <button class="navrow" id="vaSegs">
+          <span class="navrow__k">对话里的段落</span>
+          <span class="navrow__v">挑一段单独续写 / 写入</span>
+          <span class="navrow__a">›</span>
+        </button>
         <button class="navrow" id="vaFind"><span class="navrow__k">查找对话</span><span class="navrow__v">按内容 / 按章筛选</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaCtx"><span class="navrow__k">查看本次上下文</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaPull"><span class="navrow__k">把全部对话导出</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
         <div class="sec-title">危险操作</div>
         <button class="navrow navrow--danger" id="vaClear"><span class="navrow__k">清空对话</span><span class="navrow__v">已写进章节的不受影响</span></button>
       `, (r) => {
+        r.querySelector('#vaSegs').onclick = () => { closeSheet(); ChatView.openSegments(); };
         r.querySelector('#vaFind').onclick = () => { closeSheet(); ChatView.toggleFind(true); };
         r.querySelector('#vaCtx').onclick = () => { closeSheet(); ChatView.openContext(); };
         r.querySelector('#vaPull').onclick = () => {

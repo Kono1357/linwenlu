@@ -478,6 +478,73 @@ class CDP {
       };
     })()`) });
 
+    // ⑱ 续写基线：从「第一段」接着写，而不是只能从章末
+    report.steps.push({
+      step: 'baseline', check: await cdp.eval(`(function(){
+      try {
+        Store.chat.clear();
+        Store.config.set({ targetWords: 200 });
+        var m1 = Store.chat.push('ai', '第一段：他在码头站着，风很大，没有人来。');
+        Store.chat.push('ai', '第二段：他转身往回走，把烟头丢在地上。');
+        ChatView.renderFlow();
+        var box = document.querySelectorAll('[data-acts]')[0];
+        if (!box) return { error: '没有消息操作区' };
+        var fromBtn = box.querySelector('[data-act="from"]');
+        if (!fromBtn) return { error: '没有「以这段续写」按钮' };
+        fromBtn.click();
+        var hintTxt = document.getElementById('chatHint').textContent;
+        var ctx = AI.buildContext('继续写', null, m1.text);
+        var curSec = ctx.sections.filter(function(s){ return s.key === 'cur'; })[0];
+        var p = AI.buildMessages({ ask: '继续写', chapterId: null, mode: 'from', baseText: m1.text });
+        var sysText = p[0].content, userText = p[p.length - 1].content;
+        return {
+          提示条显示基线: /接着写/.test(hintTxt),
+          按钮改成已选中: !!document.querySelector('[data-act="from"].is-on'),
+          上下文改用基线: curSec ? /第一段/.test(curSec.text) : false,
+          提示词里带基线: /第一段/.test(userText),
+          提示词里带字数要求: /目标约 200 字/.test(sysText)
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ⑲ 段落列表：每段能单独挑出来处理
+    report.steps.push({
+      step: 'segments', check: await cdp.eval(`(function(){
+      try {
+        ChatView.openSegments();
+        var rows = document.querySelectorAll('.segrow').length;
+        var hasBase = !!document.querySelector('[data-base]');
+        var hasIns = !!document.querySelector('[data-ins]');
+        App.closeSheet();
+        return { 列出段数: rows, 能设基线: hasBase, 能写入: hasIns };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ⑳ 字数：显示 + 不足会标出来
+    report.steps.push({
+      step: 'wordcount', check: await cdp.eval(`(function(){
+      try {
+        ChatView.renderFlow();
+        var lens = document.querySelectorAll('.msg__len').length;
+        var short = document.querySelectorAll('.msg__len.is-short').length;
+        return {
+          字数标签: lens,
+          不达标标黄的: short,
+          目标字数: Store.get().config.targetWords
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㉑ 新名字带回证据句
+    report.steps.push({
+      step: 'quotes', check: await cdp.eval(`(function(){
+      try {
+        var t = '沈砚推开门。周砚白抬头看了他一眼。沈砚没说话。周砚白也没说话。沈砚走到窗边。风从缝里进来。';
+        var found = AI.extractNames(t, []);
+        return found.map(function(x){ return x.name + '→' + x.quotes.length + '句佐证'; });
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {

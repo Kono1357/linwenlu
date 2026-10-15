@@ -312,6 +312,14 @@ const ReadView = (() => {
       const action = b.dataset.sel;
       const text = selText;
       clearSelection();
+
+      // 「续写」：直接以选中的这一段为基线，不用先切到别处
+      if (action === 'from') {
+        App.go('chat');
+        ChatView.setBaseText(text);
+        return;
+      }
+
       if (action === 'setting') {
         App.sheet('存为设定', `
           <div class="field">

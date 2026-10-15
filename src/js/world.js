@@ -175,6 +175,12 @@ const WorldView = (() => {
         <label class="field__label">说明</label>
         <textarea class="textarea" id="stDesc" placeholder="越具体越好：外貌、脾气、口癖、和主角的关系">${esc(s ? s.desc : '')}</textarea>
       </div>
+      ${(s && s.quotes && s.quotes.length) ? `
+        <div class="field">
+          <label class="field__label">正文佐证（写的时候自动收的）</label>
+          <div class="quotebox" id="stQuotes">${s.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>
+          <button class="btn btn--ghost" id="stToDesc" style="margin-top:8px">拿这些句子起草说明</button>
+        </div>` : ''}
       <button class="btn" id="stSave">${s ? '保存' : '添加'}</button>
       ${s ? '<button class="btn btn--danger" id="stDel" style="margin-top:8px">删除</button>' : ''}
     `, (r) => {
@@ -186,6 +192,14 @@ const WorldView = (() => {
         };
         if (s) Store.setting.update(s.id, patch); else Store.setting.add(patch);
         App.closeSheet(); render(); App.toast(s ? '已保存' : '已添加');
+      };
+      const toDesc = r.querySelector('#stToDesc');
+      if (toDesc) toDesc.onclick = () => {
+        const ta = r.querySelector('#stDesc');
+        const cur = ta.value.trim();
+        const draft = (s.quotes || []).map((q) => q.replace(/[。！？]$/, '')).join('；');
+        ta.value = cur ? cur + '\n' + draft : draft;
+        ta.focus();
       };
       if (s) r.querySelector('#stDel').onclick = () => {
         if (!confirm('删除这条设定？')) return;

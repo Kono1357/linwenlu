@@ -8,6 +8,7 @@ const ChatView = (() => {
   let busy = false;
   let abort = null;
   let pendingExtra = null;   // { action, text } 来自「看剧情」的选中操作
+  let replyTo = null;        // { id, text } 续写基线：从哪一段接着写
 
   // 查找 / 筛选状态
   let findOn = false;
@@ -50,17 +51,35 @@ const ChatView = (() => {
   }
 
   function hint() {
+    const lines = [];
+
     if (pendingExtra) {
-      el.hint.innerHTML = `已带入选中原文（<b>${pendingExtra.text.length}</b> 字）：<b>${
-        { rewrite: '改写', expand: '扩写', ask: '提问' }[pendingExtra.action] || '操作'}</b> · <a href="#" id="dropExtra" style="color:var(--ink-3)">取消</a>`;
-      const d = el.hint.querySelector('#dropExtra');
-      if (d) d.onclick = (e) => { e.preventDefault(); pendingExtra = null; hint(); };
+      const act = { rewrite: '改写', expand: '扩写', ask: '提问' }[pendingExtra.action] || '操作';
+      lines.push(`已带入选中原文（<b>${pendingExtra.text.length}</b> 字）：<b>${act}</b> · <a href="#" data-drop="extra" style="color:var(--ink-3)">取消</a>`);
+    }
+    if (replyTo) {
+      const preview = replyTo.text.replace(/\s/g, '').slice(0, 18);
+      lines.push(`从这一段接着写：<b>${esc(preview)}…</b> · <a href="#" data-drop="base" style="color:var(--ink-3)">取消</a>`);
+    }
+
+    if (!lines.length) {
+      if (!AI_built()) {
+        el.hint.innerHTML = '还没配模型 —— <b>右上 ⚙ → 模型设置</b>';
+        return;
+      }
+      const c = target();
+      const n = c ? Store.chapter.textOf(c).length : 0;
+      const tw = Number(Store.get().config.targetWords) || 0;
+      el.hint.innerHTML = `将带入：作品 · 文风 · 设定 · 世界线${c && n ? ` · 本章已写 ${n} 字` : ''}${tw ? ` · 每次约 ${tw} 字` : ''}`;
       return;
     }
-    if (!AI_built()) { el.hint.innerHTML = '还没配模型 —— <b>右上 ⋯ → 模型设置</b>'; return; }
-    const c = target();
-    const n = c ? Store.chapter.textOf(c).length : 0;
-    el.hint.innerHTML = `将带入：作品 · 文风 · 设定 · 世界线${c && n ? ` · 本章已写 ${n} 字` : ''}`;
+
+    el.hint.innerHTML = lines.join('<br>');
+    el.hint.querySelectorAll('[data-drop]').forEach((a) => a.onclick = (e) => {
+      e.preventDefault();
+      if (a.dataset.drop === 'extra') { pendingExtra = null; hint(); }
+      else clearReplyTo();
+    });
   }
 
   const AI_built = () => Store.config.ready();
@@ -149,14 +168,24 @@ const ChatView = (() => {
   function msgHTML(m) {
     const who = m.role === 'me' ? '我' : (m.role === 'note' ? '·' : '临文');
     const cls = m.role === 'me' ? 'msg--me' : (m.role === 'note' ? 'msg--note' : 'msg--ai');
-    const acts = (m.role === 'ai' && !m.clipped) ? `
+    const len = m.text.replace(/\s/g, '').length;
+    const tw = Number(Store.get().config.targetWords) || 0;
+    const short = m.role === 'ai' && tw > 0 && len < tw * 0.85;
+    const lenTag = (m.role === 'ai')
+      ? `<span class="msg__len ${short ? 'is-short' : ''}">${len} 字${short ? ` · 差 ${tw - len}` : ''}</span>`
+      : '';
+    const isBase = replyTo && replyTo.id === m.id;
+    const acts = (m.role === 'ai') ? `
       <div class="msg__acts" data-acts="${m.id}">
-        <button class="mini-btn" data-act="commit">写入剧情</button>
+        ${m.clipped
+        ? '<span class="mini-btn is-on" style="cursor:default">已写入</span>'
+        : '<button class="mini-btn" data-act="commit">写入剧情</button>'}
+        <button class="mini-btn ${isBase ? 'is-on' : ''}" data-act="from">${isBase ? '续写基线 ✓' : '以这段续写'}</button>
         <button class="mini-btn" data-act="copy">复制</button>
-        <button class="mini-btn" data-act="setting">存为设定</button>
-      </div>` : (m.clipped ? `<div class="msg__acts"><span class="mini-btn is-on" style="cursor:default">已写入</span></div>` : '');
+        ${m.clipped ? '' : '<button class="mini-btn" data-act="setting">存为设定</button>'}
+      </div>` : '';
     return `<div class="msg ${cls}" data-msg="${m.id}">
-      <div class="msg__who">${who}</div>
+      <div class="msg__who">${who}${lenTag}</div>
       <div class="msg__body">${hl(m.text)}</div>
       ${acts}
     </div>`;
@@ -193,6 +222,8 @@ const ChatView = (() => {
             });
           } else if (b.dataset.act === 'commit') {
             openCommit(m);
+          } else if (b.dataset.act === 'from') {
+            setReplyTo(m);
           }
         };
       });
@@ -203,6 +234,84 @@ const ChatView = (() => {
     requestAnimationFrame(() => {
       el.flow.scrollTop = el.flow.scrollHeight;
       if (el.jump) el.jump.hidden = true;
+    });
+  }
+
+  /* ── 续写基线：从「某一段」接着写，而不是只能从章末 ── */
+  function setReplyTo(m) {
+    if (replyTo && replyTo.id === m.id) {
+      replyTo = null;
+      App.toast('已取消续写基线');
+    } else {
+      replyTo = { id: m.id, text: m.text };
+      App.toast('基线已设为这一段，接着说要写什么', 2400);
+    }
+    renderFlow();
+    hint();
+    el.input.focus();
+  }
+
+  /** 从「看剧情」选中一段直接设为基线 */
+  function setBaseText(text) {
+    const t = String(text || '').trim();
+    if (!t) return;
+    replyTo = { id: 'sel', text: t };
+    renderFlow();
+    hint();
+    el.input.focus();
+    App.toast('已把选中的这一段设为续写基线，接着说写什么', 2600);
+  }
+
+  function clearReplyTo(silent) {
+    if (!replyTo) return;
+    replyTo = null;
+    renderFlow();
+    hint();
+    if (!silent) App.toast('已取消续写基线');
+  }
+
+  /* ── 查看本章各段（问题：段落混在一起，没法单独处理）── */
+  function openSegments() {
+    const segs = Store.chat.all().filter((m) => m.role === 'ai');
+    if (!segs.length) return App.toast('还没有生成过内容');
+    App.sheet('对话里的段落', `
+      <div class="field__hint" style="margin-bottom:12px">
+        每次生成都是一段，可以各自处理。点「设为基线」就用它接着写。
+      </div>
+      ${segs.slice().reverse().map((m) => {
+      const c = m.chapterId ? Store.chapter.by(m.chapterId) : null;
+      const on = replyTo && replyTo.id === m.id;
+      const len = m.text.replace(/\s/g, '').length;
+      return `<div class="segrow ${on ? 'is-on' : ''}">
+          <div class="segrow__hd">
+            <span class="segrow__len">${len} 字</span>
+            ${c ? `<span class="segrow__ch">→ ${esc(c.title)}</span>` : '<span class="segrow__ch">未写入</span>'}
+            ${m.clipped ? '<span class="segrow__tag">已写入</span>' : ''}
+          </div>
+          <div class="segrow__txt">${esc(m.text.slice(0, 46))}…</div>
+          <div class="segrow__acts">
+            <button class="mini-btn ${on ? 'is-on' : ''}" data-base="${m.id}">${on ? '当前基线 ✓' : '设为基线'}</button>
+            <button class="mini-btn" data-goto="${m.id}">定位</button>
+            <button class="mini-btn" data-ins="${m.id}">写入剧情</button>
+          </div>
+        </div>`;
+    }).join('')}
+    `, (r) => {
+      r.querySelectorAll('[data-base]').forEach((b) => b.onclick = () => {
+        const m = Store.chat.all().find((x) => x.id === b.dataset.base);
+        if (m) { replyTo = { id: m.id, text: m.text }; }
+        App.closeSheet(); renderFlow(); hint(); App.toast('基线已设好');
+      });
+      r.querySelectorAll('[data-goto]').forEach((b) => b.onclick = () => {
+        App.closeSheet();
+        const node = document.querySelector(`[data-msg="${b.dataset.goto}"]`);
+        if (node) node.scrollIntoView({ block: 'center' });
+      });
+      r.querySelectorAll('[data-ins]').forEach((b) => b.onclick = () => {
+        const m = Store.chat.all().find((x) => x.id === b.dataset.ins);
+        App.closeSheet();
+        if (m) openCommit(m);
+      });
     });
   }
 
@@ -281,21 +390,26 @@ const ChatView = (() => {
     if (names.length) setTimeout(() => openNameSuggest(names), 900);
   }
 
-  /* ── 新名字入库 ── */
+  /* ── 新名字入库：连原句一起收进去，设定才有肉 ── */
   function openNameSuggest(names) {
     App.sheet('发现新名字', `
       <div class="field__hint" style="margin-bottom:12px">
-        这些名字在刚才那段里出现了两次以上，看起来是人物。<br>
-        存进设定之后，<b>以后每次生成都会自动带上他们</b>——不用再重复交代。
+        这些名字在刚才那段里反复出现。<br>
+        入库时会<b>把它们出现过的原句一并存成「正文佐证」</b>——以后要把设定写厚，就从这些句子里长。
       </div>
       ${names.map((n, i) => `
-        <div class="namerow">
-          <input type="checkbox" data-nm="${i}" checked style="width:17px;height:17px;accent-color:var(--gold)">
-          <span class="namerow__k">${esc(n.name)}</span>
-          <span class="namerow__n">出现 ${n.n} 次</span>
-          <select class="select" data-nk="${i}">
-            <option>人物</option><option>地点</option><option>物件</option><option>设定</option>
-          </select>
+        <div class="nameblock">
+          <div class="namerow">
+            <input type="checkbox" data-nm="${i}" checked style="width:17px;height:17px;accent-color:var(--gold)">
+            <span class="namerow__k">${esc(n.name)}</span>
+            <span class="namerow__n">${n.n} 处</span>
+            <select class="select" data-nk="${i}">
+              <option>人物</option><option>地点</option><option>物件</option><option>规则</option><option>设定</option>
+            </select>
+          </div>
+          ${(n.quotes && n.quotes.length)
+        ? `<div class="namequote">${n.quotes.map((q) => '· ' + esc(q)).join('<br>')}</div>`
+        : ''}
         </div>`).join('')}
       <button class="btn" id="nmSave" style="margin-top:16px">存进设定</button>
       <button class="btn btn--ghost" id="nmSkip" style="margin-top:8px">先不用</button>
@@ -307,12 +421,12 @@ const ChatView = (() => {
           const cb = r.querySelector(`[data-nm="${i}"]`);
           if (!cb || !cb.checked) return;
           const kind = r.querySelector(`[data-nk="${i}"]`).value;
-          Store.setting.add({ kind, name: x.name, desc: '' });
+          Store.setting.add({ kind, name: x.name, desc: '', quotes: x.quotes || [] });
           n++;
         });
         App.closeSheet();
         if (WorldView) WorldView.render();
-        App.toast(n ? `已存进设定 ${n} 条，记得补一下说明` : '没有新增');
+        App.toast(n ? `已存进设定 ${n} 条（含正文佐证），可去补说明` : '没有新增', 2600);
       };
     });
   }
@@ -321,13 +435,13 @@ const ChatView = (() => {
   async function send(askOverride, modeOverride) {
     if (busy) return;
     const ask = (askOverride !== undefined ? askOverride : el.input.value).trim();
-    if (!ask && !pendingExtra) return;
-    if (!AI_built()) return App.toast('先配置模型（右上 ⋯）');
+    if (!ask && !pendingExtra && !replyTo) return;
+    if (!AI_built()) return App.toast('先配置模型（右上 ⚙）');
 
-    const mode = modeOverride || (pendingExtra
-      ? (pendingExtra.action === 'rewrite' ? 'rewrite' : 'continue')
-      : 'chat');
+    const mode = modeOverride || (replyTo ? 'from'
+      : (pendingExtra ? (pendingExtra.action === 'rewrite' ? 'rewrite' : 'continue') : 'chat'));
     const extra = pendingExtra ? pendingExtra.text : '';
+    const baseText = replyTo ? replyTo.text : '';
 
     busy = true;
     setSendState('stop');
@@ -353,7 +467,7 @@ const ChatView = (() => {
 
     try {
       const full = await AI.generate({
-        ask, chapterId: target() ? target().id : null, mode, extra,
+        ask, chapterId: target() ? target().id : null, mode, extra, baseText,
         signal: abort.signal,
         onDelta: (piece) => {
           if (first) { body.textContent = ''; first = false; }
@@ -384,7 +498,7 @@ const ChatView = (() => {
       } else {
         Store.chat.push('note', String(e && e.message || e));
         // 降级：给出可复制提示词
-        const p = AI.buildPromptOnly({ ask, chapterId: target() ? target().id : null, mode, extra });
+        const p = AI.buildPromptOnly({ ask, chapterId: target() ? target().id : null, mode, extra, baseText });
         openFallback(p);
       }
     } finally {
@@ -554,6 +668,6 @@ const ChatView = (() => {
 
   return {
     init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
-    toggleFind, openContext,
+    toggleFind, openContext, openSegments, setReplyTo, setBaseText, clearReplyTo,
   };
 })();

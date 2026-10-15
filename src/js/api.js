@@ -28,8 +28,10 @@ const AI = (() => {
     return chunks.some((w) => hay.includes(w));
   }
 
-  /* ── 装配上下文：返回 {sections:[{key,title,text}], text} ── */
-  function buildContext(ask, chapterId) {
+  /* ── 装配上下文：返回 {sections:[{key,title,text}], text} ──
+     baseText 有值时用它替换「本章已写」那一段 ——
+     这是「以某一段为起点续写」的关键：基线可以不是章末，而是任意一段。 */
+  function buildContext(ask, chapterId, baseText) {
     const st = Store.get();
     const cfg = st.config;
     const c = chapterId ? Store.chapter.by(chapterId) : Store.chapter.active();
@@ -91,8 +93,14 @@ const AI = (() => {
       }
     }
 
-    // 本章已写
-    if (c) {
+    // 已写内容：默认取本章末尾；指定了基线就用基线那一段
+    if (baseText && baseText.trim()) {
+      sections.push({
+        key: 'cur',
+        title: '续写基线（从这里接着往下写）',
+        text: cut(baseText, Math.max(200, cfg.ctxTail | 0)),
+      });
+    } else if (c) {
       const ct = Store.chapter.textOf(c);
       if (ct.trim()) sections.push({ key: 'cur', title: `本章已写 · ${c.title}`, text: cut(ct, Math.max(200, cfg.ctxTail | 0)) });
       else sections.push({ key: 'cur', title: `本章 · ${c.title}`, text: '（还没写）' });
@@ -104,16 +112,23 @@ const AI = (() => {
 
   /* ── 组装 messages ── */
   function buildMessages(opts) {
-    const { ask, chapterId, mode = 'chat', extra = '' } = opts;
-    const ctx = buildContext(ask, chapterId);
+    const { ask, chapterId, mode = 'chat', extra = '', baseText = '' } = opts;
+    const ctx = buildContext(ask, chapterId, baseText);
     const st = Store.get();
 
     const modeRule = {
       continue: '写作模式：接着本章已有内容往下写。只输出正文本身，不要标题、不要解释、不要点评。',
+      from: '写作模式：接着给定的「续写基线」那一段往下写，保持同一场景、同一语气、同一批人物。只输出正文本身，不要标题、不要解释。',
       rewrite: '改写模式：按作者要求改写给定的原文。只输出改写后的正文，不要解释。',
       outline: '规划模式：为本章给出 3—6 条要点（一行一条，以「· 」开头），每条一句话，说明这一章要发生什么。不要写正文。',
       chat: '对话模式：先直接回答作者的问题；如果作者在要正文，就按续写的方式给出正文。',
     }[mode] || '';
+
+    // 字数要求：不写清，模型就会草草收尾
+    const tw = Number(st.config.targetWords) || 0;
+    const lenRule = (tw > 0 && (mode === 'continue' || mode === 'from' || mode === 'chat'))
+      ? `本次目标约 ${tw} 字。一次写够，不要提前收尾，也不要用重复句凑字数；`
+      : '';
 
     const sys = [
       `你是长篇小说写作助手，正在协助作者创作《${st.book.title}》。`,
@@ -122,11 +137,13 @@ const AI = (() => {
       '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
       '需要有新角色出场时，先从人物表里挑最合适的那个，表里确实没有才新建，',
       '并且同一个角色前后的称呼必须保持一致，不要用"某个人""一个男人"这类泛称代替已有角色。',
+      lenRule,
       modeRule,
     ].filter(Boolean).join('\n');
 
     const userParts = [ctx.text];
     if (extra) userParts.push(`【选中原文】\n${extra}`);
+    if (baseText && baseText.trim()) userParts.push(`【从这一段接着写】\n${baseText.trim()}`);
     userParts.push(`【作者要求】\n${ask || '（无具体要求，按上文续写）'}`);
 
     // 最近对话（只带 4 轮，省 token）
@@ -251,35 +268,53 @@ const AI = (() => {
   const STOP = new Set(['黄金', '白天', '马上', '高大', '温柔', '江南', '风景', '行李', '手掌', '树木', '花样', '毛病', '程度', '程序', '的确', '仿佛', '石头', '安静', '常常', '通常', '平静', '外面', '上面', '下面', '里面', '前面', '后面', '旁边', '周围', '对方', '结果', '原因', '情况', '时候', '地方', '东西', '事情', '样子', '心里', '眼神', '声音', '问题', '办法', '世界', '人生', '男人', '女人', '孩子', '老人', '学生', '老师', '医生', '警察', '老板', '经理', '司机', '服务',
     '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数']);
 
+  /**
+   * 从正文里认名字，并带回「证据句」——
+   * 只有名字没用，设定要能长出内容，所以把这个人出现过的原句一起带出来。
+   * 返回 [{ name, n, quotes:[原句…] }]
+   */
   function extractNames(text, known) {
     const src = String(text || '');
     if (src.length < 12) return [];
     const knownSet = new Set(known || []);
     const count = new Map();
+    const quotes = new Map();
 
-    for (let i = 0; i < src.length; i++) {
-      if (SURNAMES.indexOf(src[i]) < 0) continue;
-      // 词首约束：要么开头，要么前面不是汉字
-      if (i > 0 && /[\u4e00-\u9fa5]/.test(src[i - 1])) continue;
+    const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
 
-      let name = null;
-      for (const len of [3, 2]) {          // 先试三字，末字是虚词就退回两字
-        const cand = src.slice(i, i + len);
-        if (cand.length < len) continue;
-        if (!/^[\u4e00-\u9fa5]+$/.test(cand)) continue;
-        if (STOPCHAR.has(cand[cand.length - 1])) continue;
-        name = cand;
-        break;
+    for (const sent of sentences) {
+      const seenHere = new Set();
+      for (let i = 0; i < sent.length; i++) {
+        if (SURNAMES.indexOf(sent[i]) < 0) continue;
+        if (i > 0 && /[\u4e00-\u9fa5]/.test(sent[i - 1])) continue;
+
+        let name = null;
+        for (const len of [3, 2]) {          // 先试三字，末字是虚词就退回两字
+          const cand = sent.slice(i, i + len);
+          if (cand.length < len) continue;
+          if (!/^[\u4e00-\u9fa5]+$/.test(cand)) continue;
+          if (STOPCHAR.has(cand[cand.length - 1])) continue;
+          name = cand;
+          break;
+        }
+        if (!name || STOP.has(name) || knownSet.has(name)) continue;
+
+        if (!seenHere.has(name)) {
+          seenHere.add(name);
+          count.set(name, (count.get(name) || 0) + 1);
+          const arr = quotes.get(name) || [];
+          if (arr.length < 3 && !arr.includes(sent)) arr.push(sent);
+          quotes.set(name, arr);
+        }
+        i += name.length - 1;
       }
-      if (!name || STOP.has(name) || knownSet.has(name)) continue;
-      count.set(name, (count.get(name) || 0) + 1);
     }
 
     return [...count.entries()]
       .filter(([, n]) => n >= 2)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
-      .map(([name, n]) => ({ name, n }));
+      .map(([name, n]) => ({ name, n, quotes: quotes.get(name) || [] }));
   }
 
   /** 扫一批文本，找出还没进设定的名字 */

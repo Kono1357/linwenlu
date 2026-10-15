@@ -90,6 +90,12 @@ const App = (() => {
         <label class="field__label">文风约束</label>
         <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
       </div>
+      <div class="sec-title">每次写多少</div>
+      <div class="field">
+        <label class="field__label">目标字数（0 = 不要求）</label>
+        <input class="input" id="cfgWords" type="number" min="0" max="8000" step="100" value="${c.targetWords}">
+        <div class="field__hint">会写进系统提示，让模型一次写足；生成后字数不够会标出来提醒你继续。</div>
+      </div>
       <div class="sec-title">带入量（省 token）</div>
       <div class="row">
         <div class="field">
@@ -132,6 +138,7 @@ const App = (() => {
           ctxSettings: Number(g('#cfgSet').value) || 0,
           ctxTail: Number(g('#cfgTail').value) || 0,
           commitMode: cm ? cm.value : 'ask',
+          targetWords: Number(g('#cfgWords').value) || 0,
         });
         closeSheet(); ChatView.hint(); toast('已保存');
       };
@@ -420,12 +427,18 @@ const App = (() => {
     }
     if (cur === 'chat') {
       sheet('对话', `
+        <button class="navrow" id="vaSegs">
+          <span class="navrow__k">对话里的段落</span>
+          <span class="navrow__v">挑一段单独续写 / 写入</span>
+          <span class="navrow__a">›</span>
+        </button>
         <button class="navrow" id="vaFind"><span class="navrow__k">查找对话</span><span class="navrow__v">按内容 / 按章筛选</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaCtx"><span class="navrow__k">查看本次上下文</span><span class="navrow__a">›</span></button>
         <button class="navrow" id="vaPull"><span class="navrow__k">把全部对话导出</span><span class="navrow__v">.md</span><span class="navrow__a">›</span></button>
         <div class="sec-title">危险操作</div>
         <button class="navrow navrow--danger" id="vaClear"><span class="navrow__k">清空对话</span><span class="navrow__v">已写进章节的不受影响</span></button>
       `, (r) => {
+        r.querySelector('#vaSegs').onclick = () => { closeSheet(); ChatView.openSegments(); };
         r.querySelector('#vaFind').onclick = () => { closeSheet(); ChatView.toggleFind(true); };
         r.querySelector('#vaCtx').onclick = () => { closeSheet(); ChatView.openContext(); };
         r.querySelector('#vaPull').onclick = () => {
