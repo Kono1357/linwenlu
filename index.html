@@ -1,0 +1,2468 @@
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12100e">
+<meta name="description" content="临文录 · 一个纯前端的极简小说创作台：看剧情、提要求、管设定。">
+<title>临文录</title>
+<style>
+/* ════════════════════════════════════════════
+   临文录 · 样式
+   深色纸墨调 · 移动优先 · 零依赖
+   ════════════════════════════════════════════ */
+
+:root {
+  --bg:      #12100e;
+  --bg-2:    #1a1816;
+  --bg-3:    #232020;
+  --bg-4:    #2b2724;
+  --line:    #302b27;
+  --line-2:  #3d3733;
+  --ink:     #e9e5e0;
+  --ink-2:   #a9a29a;
+  --ink-3:   #6f6962;
+  --gold:    #c9a227;
+  --gold-2:  #e0bb4a;
+  --gold-dim:#6b5a24;
+  --red:     #b5524a;
+  --green:   #6b8f5e;
+
+  --r:  10px;
+  --r-2:14px;
+  --tap: 44px;
+
+  --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+        "Source Han Sans SC", "Noto Sans CJK SC", system-ui, sans-serif;
+  --serif: "Songti SC", "Source Han Serif SC", "Noto Serif CJK SC",
+           "Georgia", "SimSun", serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 100vh;
+}
+
+button, input, textarea, select {
+  font: inherit; color: inherit;
+  background: none; border: none; outline: none;
+}
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ─────────── 顶栏 ─────────── */
+.topbar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 8px;
+  padding: calc(var(--safe-t) + 10px) 14px 10px;
+  background: linear-gradient(var(--bg) 70%, transparent);
+  border-bottom: 1px solid var(--line);
+  position: relative; z-index: 20;
+}
+.topbar__title {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 1px; padding: 4px 0; text-align: left;
+}
+.topbar__name {
+  font-size: 16px; font-weight: 600; letter-spacing: .02em;
+  color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+.topbar__meta { font-size: 11.5px; color: var(--ink-3); }
+.topbar__actions { display: flex; gap: 2px; }
+
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: grid; place-items: center;
+  color: var(--ink-2); font-size: 17px;
+  transition: background .15s, color .15s;
+}
+.icon-btn:hover, .icon-btn:active { background: var(--bg-3); color: var(--ink); }
+
+.mini-btn {
+  padding: 6px 11px; border-radius: 8px;
+  background: var(--bg-3); color: var(--ink-2);
+  font-size: 12.5px; white-space: nowrap;
+  border: 1px solid var(--line);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.mini-btn:hover, .mini-btn:active { background: var(--bg-4); color: var(--ink); }
+.mini-btn.is-on { background: var(--gold-dim); color: var(--gold-2); border-color: var(--gold); }
+.mini-btn--danger:hover { background: #3a2622; color: var(--red); border-color: var(--red); }
+
+/* ─────────── 舞台 ─────────── */
+.stage { flex: 1 1 auto; min-height: 0; position: relative; }
+.view {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  animation: fade .18s ease;
+}
+@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* ─────────── 模块一：看剧情 ─────────── */
+.view--read { flex-direction: row; }
+
+.pane--list {
+  flex: 0 0 260px; min-width: 0;
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.pane__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+.pane__title { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); letter-spacing: .08em; }
+
+.chapter-list { flex: 1; overflow-y: auto; padding: 4px 8px 20px; }
+.chapter-item {
+  display: block; width: 100%; text-align: left;
+  padding: 9px 10px; border-radius: var(--r);
+  color: var(--ink-2); font-size: 13.5px;
+  transition: background .14s, color .14s;
+}
+.chapter-item:hover { background: var(--bg-3); color: var(--ink); }
+.chapter-item.is-on { background: var(--gold-dim); color: var(--gold-2); }
+.chapter-item__no { font-family: var(--mono); font-size: 11px; opacity: .65; margin-right: 6px; }
+.chapter-item__tag {
+  float: right; font-size: 10px; padding: 1px 6px; border-radius: 20px;
+  background: var(--bg-4); color: var(--ink-3);
+}
+.chapter-item__tag--has { background: #24352a; color: var(--green); }
+
+.pane--body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.reader__head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+}
+.reader__back { display: none; }
+.reader__title {
+  flex: 1; min-width: 0; font-size: 14px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.reader__tools { display: flex; gap: 6px; }
+
+.reader {
+  flex: 1; overflow-y: auto;
+  padding: 22px clamp(16px, 5vw, 56px) 120px;
+  font-family: var(--serif);
+  font-size: 17px; line-height: 1.95;
+  color: #ddd8d1;
+  max-width: 780px; margin: 0 auto; width: 100%;
+  scroll-behavior: smooth;
+}
+.reader p { margin: 0 0 1.05em; text-indent: 0; }
+.reader h2 {
+  font-family: var(--ui); font-size: 15px; font-weight: 600;
+  color: var(--ink-3); letter-spacing: .06em;
+  margin: 2em 0 .8em; padding-bottom: .4em; border-bottom: 1px solid var(--line);
+}
+.reader h2:first-child { margin-top: 0; }
+.reader mark.sel-hl { background: #3a3220; color: var(--gold-2); border-radius: 3px; }
+.reader__caret::after {
+  content: '▍'; color: var(--gold); animation: blink 1s steps(2) infinite;
+  font-family: var(--ui); font-size: .8em; margin-left: 1px;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.empty {
+  text-align: center; color: var(--ink-3); font-family: var(--ui);
+  font-size: 14px; line-height: 2; padding: 60px 20px;
+}
+
+/* 空状态：图标 + 标题 + 说明 + 动作 */
+.blank {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 9px; padding: 52px 26px 40px; text-align: center;
+  animation: fade .24s ease;
+}
+.blank__icon {
+  font-size: 28px; line-height: 1; margin-bottom: 4px;
+  color: var(--gold-dim); opacity: .85;
+}
+.blank__title { font-size: 15px; color: var(--ink-2); font-weight: 500; }
+.blank__desc { font-size: 13px; color: var(--ink-3); line-height: 1.95; max-width: 26em; }
+.blank__desc b { color: var(--ink-2); font-weight: 500; }
+.blank__acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
+.blank__acts .btn { width: auto; padding: 9px 20px; font-size: 13.5px; margin: 0; }
+
+/* 选中工具条 */
+.selbar {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: 14px; z-index: 15;
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 9px; border-radius: 12px;
+  background: rgba(35,32,32,.97);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 10px 34px rgba(0,0,0,.6);
+  backdrop-filter: blur(8px);
+  max-width: calc(100% - 24px); overflow-x: auto;
+}
+.selbar__label { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; padding: 0 4px; }
+
+/* ─────────── 模块二：提要求 ─────────── */
+.view--chat { }
+.chat__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line);
+}
+.chat__target { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.chat__targetLabel { font-size: 11px; color: var(--ink-3); letter-spacing: .06em; }
+.chip {
+  padding: 5px 11px; border-radius: 20px;
+  background: var(--bg-3); border: 1px solid var(--line);
+  font-size: 12.5px; color: var(--ink-2);
+  max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chip:hover { border-color: var(--gold-dim); color: var(--gold-2); }
+
+.chat__flow {
+  flex: 1; overflow-y: auto;
+  padding: 18px 14px 8px;
+  display: flex; flex-direction: column; gap: 14px;
+  max-width: 780px; width: 100%; margin: 0 auto;
+}
+.msg { display: flex; flex-direction: column; gap: 6px; max-width: 100%; }
+.msg--me { align-items: flex-end; }
+.msg__who { font-size: 10.5px; color: var(--ink-3); letter-spacing: .08em; padding: 0 4px; }
+.msg__body {
+  padding: 11px 14px; border-radius: var(--r-2);
+  font-size: 15px; line-height: 1.8;
+  white-space: pre-wrap; word-break: break-word;
+  max-width: 100%;
+}
+.msg--me .msg__body { background: var(--bg-3); border: 1px solid var(--line); border-bottom-right-radius: 4px; }
+.msg--ai .msg__body {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+  font-family: var(--serif); font-size: 15.5px; color: #ddd8d1;
+}
+.msg--note .msg__body { background: none; border: 1px dashed var(--line-2); color: var(--ink-3); font-size: 12.5px; font-family: var(--ui); }
+.msg__acts { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 2px; }
+
+.chat__composer {
+  flex: 0 0 auto;
+  padding: 8px 14px calc(8px + var(--safe-b));
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.composer {
+  display: flex; align-items: flex-end; gap: 8px;
+  background: var(--bg-2); border: 1px solid var(--line-2);
+  border-radius: var(--r-2); padding: 6px 6px 6px 12px;
+  max-width: 780px; margin: 0 auto;
+  transition: border-color .15s;
+}
+.composer:focus-within { border-color: var(--gold-dim); }
+.composer textarea {
+  flex: 1; min-width: 0; resize: none; max-height: 34vh;
+  padding: 7px 0; font-size: 15px; line-height: 1.6;
+  background: none;
+}
+.composer textarea::placeholder { color: var(--ink-3); }
+.send-btn {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 12px;
+  background: var(--gold-dim); color: var(--gold-2);
+  font-size: 17px; display: grid; place-items: center;
+  transition: background .15s, opacity .15s;
+}
+.send-btn:hover { background: var(--gold); color: #201c0d; }
+.send-btn:disabled { opacity: .4; cursor: default; }
+.send-btn--stop {
+  background: var(--bg-4); color: var(--ink-2);
+  font-size: 13px; border: 1px solid var(--line-2);
+}
+.send-btn--stop:hover { background: #3a2622; color: var(--red); border-color: var(--red); }
+.composer__bar {
+  display: flex; gap: 6px; padding-top: 8px;
+  max-width: 780px; margin: 0 auto;
+  overflow-x: auto; scrollbar-width: none;
+}
+.composer__bar::-webkit-scrollbar { display: none; }
+.chat__hint { font-size: 11.5px; color: var(--ink-3); padding: 0 2px 6px; max-width: 780px; margin: 0 auto; }
+.chat__hint b { color: var(--gold-2); font-weight: 500; }
+
+.typing { display: inline-flex; gap: 3px; align-items: center; }
+.typing i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--gold-2);
+  animation: bounce 1.2s infinite;
+}
+.typing i:nth-child(2) { animation-delay: .15s; }
+.typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce { 0%,60%,100% { transform: none; opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
+
+/* ─────────── 模块三：世界线与设定 ─────────── */
+.seg {
+  display: flex; gap: 4px; padding: 12px 14px 8px;
+  max-width: 780px; width: 100%; margin: 0 auto;
+}
+.seg__btn {
+  padding: 7px 16px; border-radius: 20px;
+  font-size: 13px; color: var(--ink-3);
+  background: var(--bg-2); border: 1px solid transparent;
+  transition: all .15s;
+}
+.seg__btn.is-on { background: var(--bg-3); color: var(--ink); border-color: var(--line-2); }
+
+.world__body {
+  flex: 1; overflow-y: auto;
+  padding: 6px 14px 90px;
+  max-width: 780px; width: 100%; margin: 0 auto;
+}
+
+.card {
+  padding: 13px 15px; margin-bottom: 9px;
+  border-radius: var(--r-2);
+  background: var(--bg-2); border: 1px solid var(--line);
+  transition: border-color .15s;
+}
+.card:hover { border-color: var(--line-2); }
+.card__top { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+.card__name { font-size: 14.5px; font-weight: 600; flex: 1; min-width: 0; }
+.card__kind {
+  font-size: 10.5px; padding: 2px 8px; border-radius: 20px;
+  background: var(--bg-4); color: var(--ink-2); white-space: nowrap;
+}
+.card__kind[data-k="人物"] { background: #2a2f3a; color: #8fa8cc; }
+.card__kind[data-k="地点"] { background: #26332c; color: #7fae91; }
+.card__kind[data-k="规则"] { background: #3a2a26; color: #cc9280; }
+.card__kind[data-k="物件"] { background: #332c3a; color: #a48fcc; }
+.card__desc { font-size: 13.5px; color: var(--ink-2); line-height: 1.7; white-space: pre-wrap; }
+.card__meta { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-size: 11px; color: var(--ink-3); }
+.card__acts { margin-left: auto; display: flex; gap: 4px; opacity: .55; }
+.card:hover .card__acts { opacity: 1; }
+
+.line-item { position: relative; padding: 0 0 16px 22px; }
+.line-item::before {
+  content: ''; position: absolute; left: 5px; top: 7px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); box-shadow: 0 0 0 3px rgba(201,162,39,.14);
+}
+.line-item::after {
+  content: ''; position: absolute; left: 8px; top: 18px; bottom: 0;
+  width: 1px; background: var(--line-2);
+}
+.line-item:last-child::after { display: none; }
+.line-item.is-closed::before { background: var(--ink-3); box-shadow: none; }
+.line-item__hd { display: flex; align-items: baseline; gap: 8px; }
+.line-item__name { font-size: 14px; font-weight: 600; }
+.line-item__at { font-size: 11px; color: var(--gold); font-family: var(--mono); }
+.line-item__desc { font-size: 13.5px; color: var(--ink-2); margin-top: 4px; line-height: 1.7; white-space: pre-wrap; }
+.line-item.is-closed .line-item__name { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--line-2); }
+
+.fab {
+  position: absolute; right: 18px; bottom: calc(78px + var(--safe-b));
+  width: 50px; height: 50px; border-radius: 16px;
+  background: var(--gold-dim); color: var(--gold-2);
+  font-size: 24px; line-height: 1;
+  display: grid; place-items: center;
+  box-shadow: 0 8px 26px rgba(0,0,0,.5);
+  transition: background .15s, transform .12s;
+  z-index: 12;
+}
+.fab:hover { background: var(--gold); color: #201c0d; }
+.fab:active { transform: scale(.94); }
+
+/* ─────────── 底部导航 ─────────── */
+.tabbar {
+  flex: 0 0 auto;
+  display: flex;
+  padding-bottom: var(--safe-b);
+  background: var(--bg-2);
+  border-top: 1px solid var(--line);
+  z-index: 20;
+}
+.tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 0 8px;
+  color: var(--ink-3); font-size: 11px;
+  transition: color .15s;
+}
+.tab i { font-size: 17px; font-style: normal; line-height: 1; }
+.tab.is-on { color: var(--gold-2); }
+.tab.is-on i { text-shadow: 0 0 14px rgba(201,162,39,.5); }
+
+/* ─────────── 抽屉 ─────────── */
+.sheet { position: fixed; inset: 0; z-index: 60; }
+.sheet__mask { position: absolute; inset: 0; background: rgba(0,0,0,.62); animation: fade .16s ease; }
+.sheet__panel {
+  position: absolute; right: 0; top: 0; bottom: 0;
+  width: min(440px, 100%);
+  background: var(--bg-2); border-left: 1px solid var(--line-2);
+  display: flex; flex-direction: column;
+  animation: slide .22s cubic-bezier(.22,.8,.3,1);
+  box-shadow: -14px 0 44px rgba(0,0,0,.5);
+}
+@keyframes slide { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+.sheet__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(var(--safe-t) + 14px) 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.sheet__head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.sheet__body { flex: 1; overflow-y: auto; padding: 16px 16px calc(20px + var(--safe-b)); }
+
+.field { margin-bottom: 15px; }
+.field__label { display: block; font-size: 11.5px; color: var(--ink-3); margin-bottom: 6px; letter-spacing: .04em; }
+.field__hint { font-size: 11px; color: var(--ink-3); margin-top: 5px; line-height: 1.6; }
+.input, .textarea, .select {
+  width: 100%; padding: 10px 12px; border-radius: var(--r);
+  background: var(--bg); border: 1px solid var(--line-2);
+  font-size: 14px; transition: border-color .15s;
+  font-family: var(--ui);
+}
+.textarea { font-family: var(--serif); font-size: 14.5px; line-height: 1.7; resize: vertical; min-height: 90px; }
+.input:focus, .textarea:focus, .select:focus { border-color: var(--gold-dim); }
+.select { appearance: none; background-image: none; }
+
+/* 滑杆：跟主题一致，别用浏览器默认蓝 */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 22px; background: none; padding: 0;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: var(--bg-4);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 17px; height: 17px; margin-top: -6.5px;
+  border-radius: 50%; background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(201,162,39,.16);
+}
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--bg-4); }
+input[type="range"]::-moz-range-thumb {
+  width: 17px; height: 17px; border: none; border-radius: 50%
+  ; background: var(--gold);
+}
+input[type="number"] { font-family: var(--mono); }
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; }
+
+.btn {
+  width: 100%; padding: 11px; border-radius: var(--r);
+  background: var(--gold-dim); color: var(--gold-2);
+  font-size: 14px; font-weight: 500;
+  transition: background .15s;
+}
+.btn:hover { background: var(--gold); color: #201c0d; }
+.btn--ghost { background: var(--bg-3); color: var(--ink-2); border: 1px solid var(--line-2); }
+.btn--ghost:hover { background: var(--bg-4); color: var(--ink); }
+.btn--danger { background: none; color: var(--red); border: 1px solid #4a2f2c; }
+.btn--danger:hover { background: #3a2622; color: var(--red); }
+
+.kv { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.kv:last-child { border-bottom: none; }
+.kv__k { flex: 0 0 auto; color: var(--ink-2); }
+.kv__v { flex: 1; text-align: right; color: var(--ink-3); font-size: 12.5px; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv button { flex: 0 0 auto; }
+
+.sec-title {
+  font-size: 11.5px; color: var(--ink-3); letter-spacing: .08em;
+  margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.sec-title:first-child { margin-top: 0; }
+
+/* ─────────── Toast ─────────── */
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(88px + var(--safe-b)); z-index: 80;
+  padding: 9px 17px; border-radius: 22px;
+  background: rgba(43,39,36,.97); border: 1px solid var(--line-2);
+  font-size: 13px; color: var(--ink);
+  box-shadow: 0 8px 26px rgba(0,0,0,.5);
+  animation: toastIn .2s ease;
+  max-width: calc(100vw - 40px); text-align: center;
+}
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ─────────── 专注模式 ─────────── */
+body.is-stream .tabbar,
+body.is-stream .topbar { display: none; }
+body.is-stream .reader { padding-top: 34px; }
+
+/* ─────────── 桌面端 ─────────── */
+@media (min-width: 761px) {
+  body { font-size: 15px; }
+  .reader__back { display: none; }
+}
+@media (max-width: 760px) {
+  /* 手机：目录与正文互斥，用返回键切换 */
+  .view--read .pane--list { flex: 1 1 auto; border-right: none; }
+  .view--read .pane--body {
+    position: absolute; inset: 0; z-index: 5; background: var(--bg);
+    transform: translateX(100%); transition: transform .24s cubic-bezier(.22,.8,.3,1);
+  }
+  body.is-reading .view--read .pane--body { transform: none; }
+  .reader__back { display: grid; }
+  .reader { font-size: 16.5px; padding: 18px 20px 140px; }
+  .chat__flow { padding: 14px 12px 8px; }
+  .selbar { bottom: 10px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══ 顶栏 ══ -->
+<header class="topbar">
+  <button class="topbar__title" id="btnBook" title="作品设置">
+    <span class="topbar__name" id="bookName">临文录</span>
+    <span class="topbar__meta" id="bookMeta">未命名作品</span>
+  </button>
+  <div class="topbar__actions">
+    <button class="icon-btn" id="btnStream" title="专注模式">◎</button>
+    <button class="icon-btn" id="btnMenu" title="更多">⋯</button>
+  </div>
+</header>
+
+<!-- ══ 主区：三个模块 ══ -->
+<main class="stage">
+
+  <!-- ── 模块一：看剧情 ── -->
+  <section class="view view--read" id="viewRead" data-view="read">
+    <div class="pane pane--list" id="chapterListPane">
+      <div class="pane__head">
+        <h2 class="pane__title">剧情</h2>
+        <button class="mini-btn" id="btnNewChapter">+ 新章</button>
+      </div>
+      <div class="chapter-list" id="chapterList"></div>
+    </div>
+
+    <div class="pane pane--body" id="chapterBodyPane">
+      <div class="reader__head">
+        <button class="icon-btn reader__back" id="btnBackToList" title="返回目录">‹</button>
+        <div class="reader__title" id="readerTitle">选择一章开始</div>
+        <div class="reader__tools">
+          <button class="mini-btn" id="btnVersions" title="版本">稿 <span id="verBadge">—</span></button>
+          <button class="mini-btn" id="btnEditChapter" title="改写正文">✎</button>
+        </div>
+      </div>
+      <article class="reader" id="reader" tabindex="0">
+        <div class="empty" id="readerEmpty">
+          <p>左边选一章，<br>或者按下面的「提要求」开始写。</p>
+        </div>
+      </article>
+      <div class="selbar" id="selbar" hidden>
+        <span class="selbar__label">选中了 <b id="selCount">0</b> 字</span>
+        <button class="mini-btn" data-sel="rewrite">改写</button>
+        <button class="mini-btn" data-sel="expand">扩写</button>
+        <button class="mini-btn" data-sel="ask">提问</button>
+        <button class="mini-btn" data-sel="setting">存为设定</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 模块二：提要求 ── -->
+  <section class="view view--chat" id="viewChat" data-view="chat" hidden>
+    <div class="chat__head">
+      <div class="chat__target">
+        <span class="chat__targetLabel">写作目标</span>
+        <button class="chip" id="btnTarget"></button>
+      </div>
+      <button class="mini-btn" id="btnContext" title="查看将带入的上下文">上下文</button>
+    </div>
+
+    <div class="chat__flow" id="chatFlow"></div>
+
+    <div class="chat__composer">
+      <div class="chat__hint" id="chatHint"></div>
+      <div class="composer">
+        <textarea id="chatInput" rows="1" placeholder="说要写什么：主角去码头见旧友，气氛要冷"></textarea>
+        <button class="send-btn" id="btnSend" title="发送">↑</button>
+      </div>
+      <div class="composer__bar">
+        <button class="mini-btn" id="btnQuickContinue">续写</button>
+        <button class="mini-btn" id="btnQuickOutline">本章要点</button>
+        <button class="mini-btn" id="btnNewChat">清空对话</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 模块三：世界线与设定 ── -->
+  <section class="view view--world" id="viewWorld" data-view="world" hidden>
+    <div class="seg" id="worldSeg">
+      <button class="seg__btn is-on" data-seg="line">世界线</button>
+      <button class="seg__btn" data-seg="setting">设定</button>
+    </div>
+
+    <div class="world__body" id="worldBody"></div>
+
+    <button class="fab" id="btnAddWorld" title="新增">+</button>
+  </section>
+
+</main>
+
+<!-- ══ 底部导航 ══ -->
+<nav class="tabbar" id="tabbar">
+  <button class="tab is-on" data-go="read"><i>▤</i><span>看剧情</span></button>
+  <button class="tab" data-go="chat"><i>✎</i><span>提要求</span></button>
+  <button class="tab" data-go="world"><i>◇</i><span>世界线</span></button>
+</nav>
+
+<!-- ══ 抽屉：设置 ══ -->
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet__mask" data-close></div>
+  <div class="sheet__panel">
+    <div class="sheet__head">
+      <h3 id="sheetTitle">设置</h3>
+      <button class="icon-btn" data-close>✕</button>
+    </div>
+    <div class="sheet__body" id="sheetBody"></div>
+  </div>
+</div>
+
+<!-- ══ 轻提示 ══ -->
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* ─── js/store.js ─── */
+/* ════════════════════════════════════════════
+   临文录 · 数据层
+   单一真源 = 内存里的 state；持久化 = localStorage + 导出 JSON
+   原则：坏数据只降级不崩；任何写入都发变更事件
+   ════════════════════════════════════════════ */
+
+const Store = (() => {
+  const KEY = 'linwenlu.db.v1';
+  const SCHEMA = 1;
+
+  const listeners = new Set();
+  let state = null;
+  let persistFailed = false;
+
+  /* ── 工具 ── */
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const str = (v, d = '') => (typeof v === 'string' ? v : d);
+  const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
+  const arr = (v) => (Array.isArray(v) ? v : []);
+
+  function blank() {
+    return {
+      schema: SCHEMA,
+      book: { title: '未命名作品', genre: '', desc: '' },
+      chapters: [],
+      settings: [],
+      lines: [],
+      chat: [],
+      config: {
+        apiBase: 'https://api.deepseek.com/v1',
+        apiKey: '',
+        model: 'deepseek-chat',
+        temperature: 0.9,
+        style: '冷峻、白描、少形容词；对话不解释情绪；每段一到三句。',
+        ctxSettings: 12,
+        ctxPrev: 1,
+        ctxTail: 1200,
+      },
+    };
+  }
+
+  /* ── 规格化：任何来源的数据都要能安全落地 ── */
+  function normalize(raw) {
+    const base = blank();
+    if (!raw || typeof raw !== 'object') return base;
+
+    const out = base;
+    if (raw.book && typeof raw.book === 'object') {
+      out.book.title = str(raw.book.title, base.book.title) || base.book.title;
+      out.book.genre = str(raw.book.genre);
+      out.book.desc = str(raw.book.desc);
+    }
+    Object.assign(out.config, raw.config && typeof raw.config === 'object' ? raw.config : {});
+
+    out.chapters = arr(raw.chapters).map((c, i) => {
+      const drafts = arr(c && c.drafts)
+        .map((d) => ({
+          id: str(d && d.id) || uid(),
+          ver: num(d && d.ver, 1),
+          text: str(d && d.text),
+          source: str(d && d.source, '手写'),
+          at: num(d && d.at, Date.now()),
+        }))
+        .filter((d) => d.text.trim() !== '');
+      drafts.sort((a, b) => a.ver - b.ver);
+      const activeId = drafts.some((d) => d.id === (c && c.activeId))
+        ? c.activeId
+        : (drafts.length ? drafts[drafts.length - 1].id : null);
+      return {
+        id: str(c && c.id) || uid(),
+        no: num(c && c.no, i + 1),
+        title: str(c && c.title) || `第${num(c && c.no, i + 1)}章`,
+        drafts,
+        activeId,
+        at: num(c && c.at, Date.now()),
+      };
+    });
+    out.chapters.sort((a, b) => a.no - b.no);
+
+    out.settings = arr(raw.settings).map((s) => ({
+      id: str(s && s.id) || uid(),
+      kind: str(s && s.kind, '设定'),
+      name: str(s && s.name, '未命名'),
+      desc: str(s && s.desc),
+      at: num(s && s.at, Date.now()),
+    }));
+
+    out.lines = arr(raw.lines).map((l) => ({
+      id: str(l && l.id) || uid(),
+      name: str(l && l.name, '未命名'),
+      desc: str(l && l.desc),
+      at: str(l && l.at, ''),
+      status: str(l && l.status, '进行中'),
+      at2: num(l && l.at2, Date.now()),
+    }));
+
+    out.chat = arr(raw.chat)
+      .map((m) => ({
+        id: str(m && m.id) || uid(),
+        role: m && m.role === 'me' ? 'me' : (m && m.role === 'note' ? 'note' : 'ai'),
+        text: str(m && m.text),
+        at: num(m && m.at, Date.now()),
+        chapterId: m && m.chapterId ? str(m.chapterId) : null,
+        clipped: !!(m && m.clipped),
+      }))
+      .filter((m) => m.text !== '');
+
+    return out;
+  }
+
+  /* ── 持久化 ── */
+  function load() {
+    let raw = null;
+    try {
+      const s = localStorage.getItem(KEY);
+      if (s) raw = JSON.parse(s);
+    } catch (e) {
+      console.warn('[临文录] 读档失败，用空档启动', e);
+    }
+    state = normalize(raw);
+    return state;
+  }
+
+  let saveTimer = null;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(KEY, JSON.stringify(state));
+        persistFailed = false;
+      } catch (e) {
+        if (!persistFailed) {
+          persistFailed = true;
+          emit('persist-failed', { error: String(e && e.message || e) });
+        }
+      }
+    }, 160);
+  }
+
+  function emit(type, detail) {
+    listeners.forEach((fn) => {
+      try { fn(type, detail); } catch (e) { console.error(e); }
+    });
+  }
+
+  function touch(type, detail) { save(); emit(type, detail); }
+  function on(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+
+  /* ── 查询 ── */
+  const get = () => state;
+
+  const chapter = {
+    all: () => state.chapters,
+    by(id) { return state.chapters.find((c) => c.id === id) || null; },
+    byNo(no) { return state.chapters.find((c) => c.no === no) || null; },
+    active() { return chapter.by(state.__activeChapter) || state.chapters[state.chapters.length - 1] || null; },
+    currentDraft(c) {
+      if (!c) return null;
+      return c.drafts.find((d) => d.id === c.activeId) || c.drafts[c.drafts.length - 1] || null;
+    },
+    textOf(c) {
+      const d = chapter.currentDraft(c);
+      return d ? d.text : '';
+    },
+    add({ title, text = '', source = '手写' } = {}) {
+      const no = state.chapters.reduce((m, c) => Math.max(m, c.no), 0) + 1;
+      const c = {
+        id: uid(), no,
+        title: title || `第${no}章`,
+        drafts: [],
+        activeId: null,
+        at: Date.now(),
+      };
+      if (text.trim()) {
+        const d = { id: uid(), ver: 1, text, source, at: Date.now() };
+        c.drafts.push(d);
+        c.activeId = d.id;
+      }
+      state.chapters.push(c);
+      state.chapters.sort((a, b) => a.no - b.no);
+      touch('chapter-add', c);
+      return c;
+    },
+    update(id, patch) {
+      const c = chapter.by(id);
+      if (!c) return null;
+      Object.assign(c, patch);
+      touch('chapter-update', c);
+      return c;
+    },
+    remove(id) {
+      const i = state.chapters.findIndex((c) => c.id === id);
+      if (i < 0) return false;
+      state.chapters.splice(i, 1);
+      if (state.__activeChapter === id) state.__activeChapter = null;
+      touch('chapter-remove', { id });
+      return true;
+    },
+    /** 追加一个新版本（平行稿），并把它设为当前 */
+    newDraft(id, text, source = 'AI') {
+      const c = chapter.by(id);
+      if (!c || !text.trim()) return null;
+      const ver = c.drafts.reduce((m, d) => Math.max(m, d.ver), 0) + 1;
+      const d = { id: uid(), ver, text, source, at: Date.now() };
+      c.drafts.push(d);
+      c.activeId = d.id;
+      touch('draft-add', { chapter: c, draft: d });
+      return d;
+    },
+    /** 覆盖当前版本 */
+    setDraftText(id, text) {
+      const c = chapter.by(id);
+      if (!c) return null;
+      const d = chapter.currentDraft(c);
+      if (!d) return chapter.newDraft(id, text);
+      d.text = text;
+      d.at = Date.now();
+      touch('draft-update', { chapter: c, draft: d });
+      return d;
+    },
+    useDraft(id, draftId) {
+      const c = chapter.by(id);
+      if (!c) return null;
+      if (!c.drafts.some((d) => d.id === draftId)) return null;
+      c.activeId = draftId;
+      touch('draft-switch', { chapter: c });
+      return c;
+    },
+    dropDraft(id, draftId) {
+      const c = chapter.by(id);
+      if (!c || c.drafts.length <= 1) return false;
+      const i = c.drafts.findIndex((d) => d.id === draftId);
+      if (i < 0) return false;
+      c.drafts.splice(i, 1);
+      if (c.activeId === draftId) c.activeId = c.drafts[c.drafts.length - 1].id;
+      touch('draft-drop', { chapter: c });
+      return true;
+    },
+    setActive(id) { state.__activeChapter = id || null; save(); },
+  };
+
+  const setting = {
+    all: () => state.settings,
+    add({ kind = '设定', name = '', desc = '' } = {}) {
+      const s = { id: uid(), kind, name, desc, at: Date.now() };
+      state.settings.unshift(s);
+      touch('setting-add', s);
+      return s;
+    },
+    update(id, patch) {
+      const s = state.settings.find((x) => x.id === id);
+      if (!s) return null;
+      Object.assign(s, patch);
+      touch('setting-update', s);
+      return s;
+    },
+    remove(id) {
+      const i = state.settings.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      state.settings.splice(i, 1);
+      touch('setting-remove', { id });
+      return true;
+    },
+  };
+
+  const line = {
+    all: () => state.lines,
+    add({ name = '', desc = '', at = '', status = '进行中' } = {}) {
+      const l = { id: uid(), name, desc, at, status, at2: Date.now() };
+      state.lines.unshift(l);
+      touch('line-add', l);
+      return l;
+    },
+    update(id, patch) {
+      const l = state.lines.find((x) => x.id === id);
+      if (!l) return null;
+      Object.assign(l, patch);
+      touch('line-update', l);
+      return l;
+    },
+    remove(id) {
+      const i = state.lines.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      state.lines.splice(i, 1);
+      touch('line-remove', { id });
+      return true;
+    },
+    toggle(id) {
+      const l = state.lines.find((x) => x.id === id);
+      if (!l) return null;
+      l.status = l.status === '已收束' ? '进行中' : '已收束';
+      touch('line-update', l);
+      return l;
+    },
+  };
+
+  const chat = {
+    all: () => state.chat,
+    push(role, text, extra = {}) {
+      const m = { id: uid(), role, text, at: Date.now(), chapterId: null, clipped: false, ...extra };
+      state.chat.push(m);
+      if (state.chat.length > 400) state.chat.splice(0, state.chat.length - 400);
+      touch('chat-push', m);
+      return m;
+    },
+    markClipped(id) {
+      const m = state.chat.find((x) => x.id === id);
+      if (!m) return null;
+      m.clipped = true;
+      touch('chat-update', m);
+      return m;
+    },
+    clear() { state.chat = []; touch('chat-clear'); },
+  };
+
+  const config = {
+    all: () => state.config,
+    set(patch) { Object.assign(state.config, patch); touch('config'); },
+    ready() { return !!(state.config.apiKey && state.config.apiBase && state.config.model); },
+  };
+
+  /* ── 整档导入导出 ── */
+  function exportJSON() { return JSON.stringify(state, null, 2); }
+
+  function importJSON(text) {
+    let raw;
+    try { raw = JSON.parse(text); }
+    catch (e) { return { ok: false, reason: 'JSON 解析失败：' + (e.message || e) }; }
+    const before = state;
+    try {
+      state = normalize(raw);
+    } catch (e) {
+      state = before;
+      return { ok: false, reason: '数据规格化失败：' + (e.message || e) };
+    }
+    touch('import');
+    return { ok: true, chapters: state.chapters.length, settings: state.settings.length, lines: state.lines.length };
+  }
+
+  function reset() { state = blank(); touch('reset'); }
+  function isPersistFailed() { return persistFailed; }
+
+  return {
+    load, save, on, get, uid,
+    chapter, setting, line, chat, config,
+    exportJSON, importJSON, reset, isPersistFailed,
+    get activeChapterId() { return state && state.__activeChapter || null; },
+  };
+})();
+
+/* ─── js/api.js ─── */
+/* ════════════════════════════════════════════
+   临文录 · AI 层
+   ① 上下文装配（按预算挑料，可预览）② 流式调用 ③ 失败降级到「可复制提示词」
+   ════════════════════════════════════════════ */
+
+const AI = (() => {
+  const cut = (s, n) => {
+    s = String(s || '');
+    if (n <= 0) return '';
+    return s.length <= n ? s : '…' + s.slice(-n);
+  };
+  const cutHead = (s, n) => {
+    s = String(s || '');
+    if (n <= 0) return '';
+    return s.length <= n ? s : s.slice(0, n) + '…';
+  };
+
+  /* ── 相关性：设定是否和这段文本有关 ── */
+  function relevant(text, s) {
+    if (!text) return false;
+    const hay = String(text);
+    const name = String(s.name || '').trim();
+    if (name.length >= 2 && hay.includes(name)) return true;
+    // 描述里的 2 字以上词块命中一次即算相关
+    const desc = String(s.desc || '');
+    if (!desc) return false;
+    const chunks = desc.split(/[\s，。、；：！？（）()【】\[\]「」,.;:!?—\-/]+/).filter((w) => w.length >= 2);
+    return chunks.some((w) => hay.includes(w));
+  }
+
+  /* ── 装配上下文：返回 {sections:[{key,title,text}], text} ── */
+  function buildContext(ask, chapterId) {
+    const st = Store.get();
+    const cfg = st.config;
+    const c = chapterId ? Store.chapter.by(chapterId) : Store.chapter.active();
+    const sections = [];
+
+    const head = [`《${st.book.title}》`];
+    if (st.book.genre) head.push(st.book.genre);
+    if (st.book.desc) head.push(cutHead(st.book.desc, 200));
+    sections.push({ key: 'book', title: '作品', text: head.join(' · ') });
+
+    if (cfg.style) sections.push({ key: 'style', title: '文风', text: cfg.style });
+
+    // 设定：先相关命中，再按时间补足
+    const probe = [ask, c ? Store.chapter.textOf(c) : ''].join('\n');
+    const all = st.settings;
+    const hit = all.filter((s) => relevant(probe, s));
+    const rest = all.filter((s) => !hit.includes(s));
+    const picked = hit.concat(rest).slice(0, Math.max(0, cfg.ctxSettings | 0));
+    if (picked.length) {
+      sections.push({
+        key: 'settings',
+        title: `设定（${picked.length}/${all.length}）`,
+        text: picked.map((s) => `· ${s.name}〔${s.kind}〕${s.desc ? '：' + cutHead(s.desc, 160) : ''}`).join('\n'),
+      });
+    }
+
+    const open = st.lines.filter((l) => l.status !== '已收束');
+    if (open.length) {
+      sections.push({
+        key: 'lines',
+        title: `世界线（未收束 ${open.length}）`,
+        text: open.slice(0, 10).map((l) => `· ${l.at ? `[${l.at}] ` : ''}${l.name}${l.desc ? '：' + cutHead(l.desc, 120) : ''}`).join('\n'),
+      });
+    }
+
+    // 上一章结尾
+    if (c && (cfg.ctxPrev | 0) > 0) {
+      const prev = st.chapters.filter((x) => x.no < c.no).pop();
+      const pt = prev ? Store.chapter.textOf(prev) : '';
+      if (pt.trim()) {
+        sections.push({ key: 'prev', title: `上一章结尾 · ${prev.title}`, text: cut(pt, 500) });
+      }
+    }
+
+    // 本章已写
+    if (c) {
+      const ct = Store.chapter.textOf(c);
+      if (ct.trim()) sections.push({ key: 'cur', title: `本章已写 · ${c.title}`, text: cut(ct, Math.max(200, cfg.ctxTail | 0)) });
+      else sections.push({ key: 'cur', title: `本章 · ${c.title}`, text: '（还没写）' });
+    }
+
+    const text = sections.map((s) => `【${s.title}】\n${s.text}`).join('\n\n');
+    return { sections, text, chapter: c };
+  }
+
+  /* ── 组装 messages ── */
+  function buildMessages(opts) {
+    const { ask, chapterId, mode = 'chat', extra = '' } = opts;
+    const ctx = buildContext(ask, chapterId);
+    const st = Store.get();
+
+    const modeRule = {
+      continue: '写作模式：接着本章已有内容往下写。只输出正文本身，不要标题、不要解释、不要点评。',
+      rewrite: '改写模式：按作者要求改写给定的原文。只输出改写后的正文，不要解释。',
+      outline: '规划模式：为本章给出 3—6 条要点（一行一条，以「· 」开头），每条一句话，说明这一章要发生什么。不要写正文。',
+      chat: '对话模式：先直接回答作者的问题；如果作者在要正文，就按续写的方式给出正文。',
+    }[mode] || '';
+
+    const sys = [
+      `你是长篇小说写作助手，正在协助作者创作《${st.book.title}》。`,
+      st.config.style ? `文风要求：${st.config.style}` : '',
+      '严格遵守下面提供的设定与世界线，不要自创与设定冲突的内容。',
+      modeRule,
+    ].filter(Boolean).join('\n');
+
+    const userParts = [ctx.text];
+    if (extra) userParts.push(`【选中原文】\n${extra}`);
+    userParts.push(`【作者要求】\n${ask || '（无具体要求，按上文续写）'}`);
+
+    // 最近对话（只带 4 轮，省 token）
+    const history = Store.chat.all().slice(-8).map((m) => ({
+      role: m.role === 'me' ? 'user' : 'assistant',
+      content: m.text,
+    })).filter((m, i, a) => !(i === a.length - 1 && m.role === 'assistant' && a[a.length - 1].content === ask));
+
+    return [{ role: 'system', content: sys }, ...history, { role: 'user', content: userParts.join('\n\n') }];
+  }
+
+  /* ── 只生成提示词（降级用） ── */
+  function buildPromptOnly(opts) {
+    return buildMessages(opts).map((m) => {
+      const who = m.role === 'system' ? '系统' : (m.role === 'user' ? '用户' : '助手');
+      return `### ${who}\n${m.content}`;
+    }).join('\n\n');
+  }
+
+  /* ── 流式调用 ── */
+  async function generate(opts) {
+    const { onDelta, signal } = opts;
+    const st = Store.get();
+    const cfg = st.config;
+    if (!cfg.apiKey) throw new Error('还没填 API Key —— 点右上「⋯ → 模型设置」');
+
+    const base = String(cfg.apiBase || '').replace(/\/+$/, '');
+    const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
+    const body = {
+      model: cfg.model,
+      messages: buildMessages(opts),
+      stream: true,
+      temperature: Number(cfg.temperature) || 0.9,
+    };
+
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (e) {
+      const err = new Error('连接失败：' + (e && e.message || e) +
+        '\n可能是浏览器跨域限制或网络问题。可点「复制提示词」拿到完整请求，粘贴到任意 AI 里。');
+      err.code = 'NETWORK';
+      throw err;
+    }
+
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.text()).slice(0, 400); } catch (_) { }
+      const e = new Error(`接口返回 ${res.status}${res.statusText ? ' ' + res.statusText : ''}\n${detail}`);
+      e.code = 'HTTP';
+      throw e;
+    }
+
+    if (!res.body) {  // 某些环境不支持流
+      const j = await res.json();
+      const txt = j?.choices?.[0]?.message?.content || '';
+      onDelta && onDelta(txt);
+      return txt;
+    }
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder('utf-8');
+    let buf = '';
+    let full = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line || line.startsWith(':')) continue;
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const j = JSON.parse(payload);
+          const d = j.choices?.[0]?.delta;
+          const piece = (d && (d.content ?? d.reasoning_content)) || '';
+          if (piece) { full += piece; onDelta && onDelta(piece); }
+        } catch (_) { /* 忽略半截 JSON */ }
+      }
+    }
+    return full;
+  }
+
+  /* ── 连通性自检 ── */
+  async function probe() {
+    const st = Store.get();
+    const cfg = st.config;
+    if (!cfg.apiKey) return { ok: false, reason: '未填 API Key' };
+    const base = String(cfg.apiBase || '').replace(/\/+$/, '');
+    const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+        body: JSON.stringify({ model: cfg.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 4, stream: false }),
+      });
+      if (!res.ok) return { ok: false, reason: `HTTP ${res.status}：${(await res.text()).slice(0, 200)}` };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: '网络/跨域失败：' + (e && e.message || e) };
+    }
+  }
+
+  return { buildContext, buildMessages, buildPromptOnly, generate, probe, cut };
+})();
+
+/* ─── js/read.js ─── */
+/* ════════════════════════════════════════════
+   临文录 · 模块一：看剧情
+   目录 / 正文 / 多版本 / 选中即操作
+   ════════════════════════════════════════════ */
+
+const ReadView = (() => {
+  let el = {};
+  let selText = '';
+
+  const esc = (s) => String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  /** 字数友好格式：12345 → 1.2万 */
+  const fmtNum = (n) => (n >= 10000 ? (n / 10000).toFixed(1) + '万' : String(n));
+
+  function renderBody(text, chapter) {
+    if (!text || !text.trim()) {
+      return `<div class="blank">
+        <div class="blank__icon">▤</div>
+        <div class="blank__title">这一章还是空的</div>
+        <div class="blank__desc">去「提要求」说一句要写什么，<br>生成的内容可以一键写进这里。</div>
+        <div class="blank__acts">
+          <button class="btn" data-blank="write">去提要求</button>
+          <button class="btn btn--ghost" data-blank="edit">手写一段</button>
+        </div>
+      </div>`;
+    }
+    return text.split(/\n\s*\n/).map((blk) => {
+      const t = blk.trim();
+      if (!t) return '';
+      if (/^#{1,3}\s/.test(t)) return `<h2>${esc(t.replace(/^#{1,3}\s*/, ''))}</h2>`;
+      return `<p>${esc(t).replace(/\n/g, '<br>')}</p>`;
+    }).join('');
+  }
+
+  function renderList() {
+    const list = Store.chapter.all();
+    const cur = Store.activeChapterId;
+    if (!list.length) {
+      el.list.innerHTML = `<div class="blank" style="padding:36px 14px 24px">
+        <div class="blank__icon">✎</div>
+        <div class="blank__title">还没有章节</div>
+        <div class="blank__desc">建第一章，或者直接去「提要求」<br>让 AI 写一段再落进来。</div>
+        <div class="blank__acts" style="flex-direction:column;width:100%">
+          <button class="btn" data-new style="width:100%">新建第一章</button>
+          <button class="btn btn--ghost" data-goto-chat style="width:100%;margin-top:8px">去提要求</button>
+        </div>
+      </div>`;
+      el.list.querySelector('[data-new]').onclick = () => {
+        const c = Store.chapter.add({});
+        Store.chapter.setActive(c.id);
+        refresh();
+        App.toast('已新建 ' + c.title);
+      };
+      el.list.querySelector('[data-goto-chat]').onclick = () => App.go('chat');
+      return;
+    }
+    el.list.innerHTML = list.map((c) => {
+      const has = c.drafts.length > 0;
+      const n = c.drafts.length;
+      const words = Store.chapter.textOf(c).length;
+      return `<button class="chapter-item ${c.id === cur ? 'is-on' : ''}" data-ch="${c.id}">
+        <span class="chapter-item__tag ${has ? 'chapter-item__tag--has' : ''}">${has ? fmtNum(words) + '字 · ' + n + '稿' : '空'}</span>
+        <span class="chapter-item__no">${String(c.no).padStart(3, '0')}</span>${esc(c.title)}
+      </button>`;
+    }).join('');
+  }
+
+  function renderReader() {
+    const c = Store.chapter.active();
+    if (!c) {
+      el.title.textContent = '选择一章开始';
+      el.reader.innerHTML = `<div class="blank">
+        <div class="blank__icon">▤</div>
+        <div class="blank__title">这里放你的剧情</div>
+        <div class="blank__desc">
+          写好的正文会按章排在这里，<br>
+          同一章可以留多份平行稿，随时切换比对。
+        </div>
+        <div class="blank__acts">
+          <button class="btn" data-go-chat>开始写</button>
+        </div>
+      </div>`;
+      el.reader.querySelector('[data-go-chat]').onclick = () => App.go('chat');
+      el.ver.textContent = '—';
+      return;
+    }
+    const d = Store.chapter.currentDraft(c);
+    el.title.textContent = `${String(c.no).padStart(3, '0')} · ${c.title}`;
+    el.ver.textContent = d ? `${d.ver}/${c.drafts.length}` : '0';
+    el.reader.innerHTML = renderBody(d ? d.text : '', c);
+    el.reader.scrollTop = 0;
+    el.reader.querySelectorAll('[data-blank]').forEach((b) => {
+      b.onclick = () => {
+        if (b.dataset.blank === 'write') App.go('chat');
+        else { document.body.classList.remove('is-reading'); openEditor(); }
+      };
+    });
+  }
+
+  function refresh() {
+    renderList();
+    renderReader();
+  }
+
+  /* ── 选中处理 ── */
+  function handleSelection() {
+    const sel = window.getSelection();
+    const t = sel ? String(sel).trim() : '';
+    if (!t || t.length < 2 || !el.reader.contains(sel.anchorNode)) {
+      selText = '';
+      el.selbar.hidden = true;
+      return;
+    }
+    selText = t;
+    el.selCount.textContent = t.length;
+    el.selbar.hidden = false;
+  }
+
+  function clearSelection() {
+    selText = '';
+    el.selbar.hidden = true;
+    const s = window.getSelection();
+    if (s) s.removeAllRanges();
+  }
+
+  /* ── 版本 ── */
+  function openVersions() {
+    const c = Store.chapter.active();
+    if (!c) return App.toast('先选一章');
+    if (!c.drafts.length) return App.toast('这一章还没有内容');
+    const rows = c.drafts.slice().reverse().map((d) => `
+      <div class="kv">
+        <span class="kv__k">稿 ${d.ver}${d.id === c.activeId ? ' ●' : ''}</span>
+        <span class="kv__v">${d.source} · ${new Date(d.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${d.text.length}字</span>
+        <button class="mini-btn" data-use="${d.id}">用这版</button>
+        <button class="mini-btn mini-btn--danger" data-drop="${d.id}">删</button>
+      </div>`).join('');
+    App.sheet(`版本 · ${c.title}`, `
+      <div class="field__hint" style="margin-bottom:10px">
+        同一章可以留多份平行稿。切换只影响阅读与续写，不会删掉其他版本。
+      </div>${rows}
+      <div class="sec-title">操作</div>
+      <button class="btn btn--ghost" id="vNew">从当前稿复制一份新版本</button>
+      <button class="btn btn--danger" id="vDel" style="margin-top:8px">删除本章</button>
+    `, (root) => {
+      root.querySelectorAll('[data-use]').forEach((b) => b.onclick = () => {
+        Store.chapter.useDraft(c.id, b.dataset.use);
+        App.closeSheet(); refresh(); App.toast('已切换版本');
+      });
+      root.querySelectorAll('[data-drop]').forEach((b) => b.onclick = () => {
+        if (Store.chapter.dropDraft(c.id, b.dataset.drop)) { App.closeSheet(); refresh(); App.toast('已删掉那一稿'); }
+        else App.toast('至少要留一稿');
+      });
+      root.querySelector('#vNew').onclick = () => {
+        const d = Store.chapter.currentDraft(c);
+        if (!d) return App.toast('没有可复制的稿');
+        Store.chapter.newDraft(c.id, d.text, '派生');
+        App.closeSheet(); refresh(); App.toast('已复制为新版本');
+      };
+      root.querySelector('#vDel').onclick = () => {
+        if (!confirm(`删除《${c.title}》整章？该操作不可撤销。`)) return;
+        Store.chapter.remove(c.id);
+        App.closeSheet(); refresh(); App.toast('已删除');
+      };
+    });
+  }
+
+  /* ── 编辑正文 ── */
+  function openEditor() {
+    const c = Store.chapter.active();
+    if (!c) return App.toast('先选一章');
+    const d = Store.chapter.currentDraft(c);
+    App.sheet(`改写 · ${c.title}`, `
+      <div class="field">
+        <label class="field__label">章节名</label>
+        <input class="input" id="edTitle" value="${esc(c.title)}">
+      </div>
+      <div class="field">
+        <label class="field__label">正文</label>
+        <textarea class="textarea" id="edText" style="min-height:46vh">${esc(d ? d.text : '')}</textarea>
+      </div>
+      <div class="row">
+        <button class="btn" id="edSave">覆盖当前稿</button>
+        <button class="btn btn--ghost" id="edNew">存为新版本</button>
+      </div>
+    `, (root) => {
+      const titleEl = root.querySelector('#edTitle');
+      const textEl = root.querySelector('#edText');
+      root.querySelector('#edSave').onclick = () => {
+        Store.chapter.update(c.id, { title: titleEl.value.trim() || c.title });
+        if (d) Store.chapter.setDraftText(c.id, textEl.value);
+        else Store.chapter.newDraft(c.id, textEl.value, '手写');
+        App.closeSheet(); refresh(); App.toast('已保存');
+      };
+      root.querySelector('#edNew').onclick = () => {
+        if (!textEl.value.trim()) return App.toast('正文是空的');
+        Store.chapter.newDraft(c.id, textEl.value, '手写');
+        App.closeSheet(); refresh(); App.toast('已存为新版本');
+      };
+    });
+  }
+
+  function init(root) {
+    el = {
+      list: root.querySelector('#chapterList'),
+      reader: root.querySelector('#reader'),
+      title: root.querySelector('#readerTitle'),
+      ver: root.querySelector('#verBadge'),
+      selbar: root.querySelector('#selbar'),
+      selCount: root.querySelector('#selCount'),
+    };
+
+    el.list.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ch]');
+      if (!b) return;
+      Store.chapter.setActive(b.dataset.ch);
+      document.body.classList.add('is-reading');
+      refresh();
+    });
+
+    root.querySelector('#btnBackToList').onclick = () => {
+      document.body.classList.remove('is-reading');
+      renderList();
+    };
+    root.querySelector('#btnNewChapter').onclick = () => {
+      const c = Store.chapter.add({});
+      Store.chapter.setActive(c.id);
+      refresh();
+      App.toast('已新建 ' + c.title);
+    };
+    root.querySelector('#btnVersions').onclick = openVersions;
+    root.querySelector('#btnEditChapter').onclick = openEditor;
+
+    root.querySelector('#selbar').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-sel]');
+      if (!b || !selText) return;
+      const action = b.dataset.sel;
+      const text = selText;
+      clearSelection();
+      if (action === 'setting') {
+        App.sheet('存为设定', `
+          <div class="field">
+            <label class="field__label">名称</label>
+            <input class="input" id="stName" value="${esc(text.slice(0, 12))}">
+          </div>
+          <div class="field">
+            <label class="field__label">类别</label>
+            <select class="select" id="stKind">
+              <option>人物</option><option>地点</option><option>物件</option><option>规则</option><option>设定</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field__label">说明</label>
+            <textarea class="textarea" id="stDesc">${esc(text)}</textarea>
+          </div>
+          <button class="btn" id="stSave">存进设定</button>
+        `, (r2) => {
+          r2.querySelector('#stSave').onclick = () => {
+            Store.setting.add({
+              name: r2.querySelector('#stName').value.trim() || '未命名',
+              kind: r2.querySelector('#stKind').value,
+              desc: r2.querySelector('#stDesc').value.trim(),
+            });
+            App.closeSheet(); App.toast('已存进设定');
+          };
+        });
+        return;
+      }
+      App.captureSelection(action, text);
+    });
+
+    // 选中：桌面 mouseup + 移动 touchend
+    el.reader.addEventListener('mouseup', () => setTimeout(handleSelection, 10));
+    el.reader.addEventListener('touchend', () => setTimeout(handleSelection, 60));
+    el.reader.addEventListener('scroll', () => { if (!el.selbar.hidden) clearSelection(); }, { passive: true });
+  }
+
+  return { init, refresh, renderList, renderReader, openEditor, clearSelection };
+})();
+
+/* ─── js/chat.js ─── */
+/* ════════════════════════════════════════════
+   临文录 · 模块二：提要求
+   对话式创作 + 一键落进章节
+   ════════════════════════════════════════════ */
+
+const ChatView = (() => {
+  let el = {};
+  let busy = false;
+  let abort = null;
+  let pendingExtra = null;   // { action, text } 来自「看剧情」的选中操作
+
+  const esc = (s) => String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  /* ── 目标章 ── */
+  function target() {
+    return Store.chapter.active();
+  }
+
+  function renderTarget() {
+    const c = target();
+    el.target.textContent = c ? `${String(c.no).padStart(3, '0')} · ${c.title}` : '（还没建章，点我新建）';
+  }
+
+  function hint() {
+    if (pendingExtra) {
+      el.hint.innerHTML = `已带入选中原文（<b>${pendingExtra.text.length}</b> 字）：<b>${
+        { rewrite: '改写', expand: '扩写', ask: '提问' }[pendingExtra.action] || '操作'}</b> · <a href="#" id="dropExtra" style="color:var(--ink-3)">取消</a>`;
+      const d = el.hint.querySelector('#dropExtra');
+      if (d) d.onclick = (e) => { e.preventDefault(); pendingExtra = null; hint(); };
+      return;
+    }
+    if (!AI_built()) { el.hint.innerHTML = '还没配模型 —— <b>右上 ⋯ → 模型设置</b>'; return; }
+    const c = target();
+    const n = c ? Store.chapter.textOf(c).length : 0;
+    el.hint.innerHTML = `将带入：作品 · 文风 · 设定 · 世界线${c && n ? ` · 本章已写 ${n} 字` : ''}`;
+  }
+
+  const AI_built = () => Store.config.ready();
+
+  /* ── 对话渲染 ── */
+  function renderFlow() {
+    const all = Store.chat.all();
+    if (!all.length) {
+      const ready = AI_built();
+      el.flow.innerHTML = `<div class="blank" style="padding:34px 14px 20px">
+        <div class="blank__icon">✎</div>
+        <div class="blank__title">说要写什么就行</div>
+        <div class="blank__desc" style="text-align:left;display:inline-block">
+          · 主角去码头见旧友，气氛要冷<br>
+          · 把刚才那段扩成八百字<br>
+          · 这一章我想让伏笔收掉<br>
+          · 给主角换个更狠的开场
+        </div>
+        <div class="blank__acts">
+          ${ready
+          ? '<button class="btn" data-demo="主角在雨里等一个人，气氛要冷">试一段</button>'
+          : '<button class="btn" data-cfg>先配置模型</button>'}
+        </div>
+        ${ready ? '' : '<div class="blank__desc" style="margin-top:6px;font-size:12px">需要填一个 OpenAI 兼容接口的 Key</div>'}
+      </div>`;
+      const d = el.flow.querySelector('[data-cfg]');
+      if (d) d.onclick = () => App.openModelSettings();
+      const t = el.flow.querySelector('[data-demo]');
+      if (t) t.onclick = () => { el.input.value = t.dataset.demo; autoGrow(); el.input.focus(); };
+      return;
+    }
+    el.flow.innerHTML = all.map(msgHTML).join('');
+    bindActs();
+    scrollEnd();
+  }
+
+  function msgHTML(m) {
+    const who = m.role === 'me' ? '我' : (m.role === 'note' ? '·' : '临文');
+    const cls = m.role === 'me' ? 'msg--me' : (m.role === 'note' ? 'msg--note' : 'msg--ai');
+    const acts = (m.role === 'ai' && !m.clipped) ? `
+      <div class="msg__acts" data-acts="${m.id}">
+        <button class="mini-btn" data-act="commit">写入剧情</button>
+        <button class="mini-btn" data-act="copy">复制</button>
+        <button class="mini-btn" data-act="setting">存为设定</button>
+      </div>` : (m.clipped ? `<div class="msg__acts"><span class="mini-btn is-on" style="cursor:default">已写入</span></div>` : '');
+    return `<div class="msg ${cls}" data-msg="${m.id}">
+      <div class="msg__who">${who}</div>
+      <div class="msg__body">${esc(m.text)}</div>
+      ${acts}
+    </div>`;
+  }
+
+  function bindActs() {
+    el.flow.querySelectorAll('[data-acts]').forEach((box) => {
+      const id = box.dataset.acts;
+      box.querySelectorAll('[data-act]').forEach((b) => {
+        b.onclick = () => {
+          const m = Store.chat.all().find((x) => x.id === id);
+          if (!m) return;
+          if (b.dataset.act === 'copy') {
+            navigator.clipboard?.writeText(m.text).then(
+              () => App.toast('已复制'), () => App.toast('复制失败'));
+          } else if (b.dataset.act === 'setting') {
+            App.sheet('存为设定', `
+              <div class="field"><label class="field__label">名称</label>
+                <input class="input" id="kName" value="${esc(m.text.slice(0, 12))}"></div>
+              <div class="field"><label class="field__label">类别</label>
+                <select class="select" id="kKind"><option>人物</option><option>地点</option><option>物件</option><option>规则</option><option>设定</option></select></div>
+              <div class="field"><label class="field__label">说明</label>
+                <textarea class="textarea" id="kDesc">${esc(m.text)}</textarea></div>
+              <button class="btn" id="kSave">存进设定</button>
+            `, (r) => {
+              r.querySelector('#kSave').onclick = () => {
+                Store.setting.add({
+                  name: r.querySelector('#kName').value.trim() || '未命名',
+                  kind: r.querySelector('#kKind').value,
+                  desc: r.querySelector('#kDesc').value.trim(),
+                });
+                App.closeSheet(); App.toast('已存进设定');
+              };
+            });
+          } else if (b.dataset.act === 'commit') {
+            openCommit(m);
+          }
+        };
+      });
+    });
+  }
+
+  function scrollEnd() {
+    requestAnimationFrame(() => { el.flow.scrollTop = el.flow.scrollHeight; });
+  }
+
+  /* ── 落盘 ── */
+  function openCommit(m) {
+    const c = target();
+    const cur = c ? Store.chapter.currentDraft(c) : null;
+    const has = cur && cur.text.trim();
+    App.sheet('写入剧情', `
+      <div class="field__hint" style="margin-bottom:12px">
+        这段 <b>${m.text.length}</b> 字将写进
+        <b>${c ? esc(c.title) : '（新章）'}</b>。
+      </div>
+      <button class="btn" id="cmAppend">续接到本章末尾${has ? '' : '（本章为空，直接写入）'}</button>
+      <button class="btn btn--ghost" id="cmNew" style="margin-top:8px">存为一个新版本（旧稿保留）</button>
+      <button class="btn btn--ghost" id="cmReplace" style="margin-top:8px">替换当前版本</button>
+      ${!c ? '<div class="field__hint" style="margin-top:10px">还没有章节，会先自动建一章。</div>' : ''}
+    `, (r) => {
+      const ensure = () => c || Store.chapter.add({ title: '第1章' });
+
+      r.querySelector('#cmAppend').onclick = () => {
+        const ch = ensure();
+        const d = Store.chapter.currentDraft(ch);
+        const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + m.text.trim() : m.text.trim();
+        if (d) Store.chapter.setDraftText(ch.id, next);
+        else Store.chapter.newDraft(ch.id, next, 'AI');
+        Store.chat.markClipped(m.id);
+        App.closeSheet(); renderFlow();
+        if (ReadView) ReadView.refresh();
+        App.toast('已写进 ' + ch.title);
+      };
+
+      r.querySelector('#cmNew').onclick = () => {
+        const ch = ensure();
+        Store.chapter.newDraft(ch.id, m.text.trim(), 'AI');
+        Store.chat.markClipped(m.id);
+        App.closeSheet(); renderFlow();
+        if (ReadView) ReadView.refresh();
+        App.toast('已存为新版本');
+      };
+
+      const rep = r.querySelector('#cmReplace');
+      if (!has) rep.style.display = 'none';
+      rep.onclick = () => {
+        const ch = ensure();
+        Store.chapter.setDraftText(ch.id, m.text.trim());
+        Store.chat.markClipped(m.id);
+        App.closeSheet(); renderFlow();
+        if (ReadView) ReadView.refresh();
+        App.toast('已替换当前稿');
+      };
+    });
+  }
+
+  /* ── 发送 ── */
+  async function send(askOverride, modeOverride) {
+    if (busy) return;
+    const ask = (askOverride !== undefined ? askOverride : el.input.value).trim();
+    if (!ask && !pendingExtra) return;
+    if (!AI_built()) return App.toast('先配置模型（右上 ⋯）');
+
+    const mode = modeOverride || (pendingExtra
+      ? (pendingExtra.action === 'rewrite' ? 'rewrite' : 'continue')
+      : 'chat');
+    const extra = pendingExtra ? pendingExtra.text : '';
+
+    busy = true;
+    setSendState('stop');
+    if (askOverride === undefined) el.input.value = '';
+    autoGrow();
+
+    Store.chat.push('me', ask + (extra ? `\n〔带入选中 ${extra.length} 字〕` : ''));
+    pendingExtra = null;
+    hint();
+
+    // 流式气泡
+    const holder = document.createElement('div');
+    holder.className = 'msg msg--ai';
+    holder.innerHTML = `<div class="msg__who">临文</div>
+      <div class="msg__body"><span class="typing"><i></i><i></i><i></i></span></div>`;
+    el.flow.appendChild(holder);
+    scrollEnd();
+    const body = holder.querySelector('.msg__body');
+
+    let acc = '';
+    let first = true;
+    abort = new AbortController();
+
+    try {
+      const full = await AI.generate({
+        ask, chapterId: target() ? target().id : null, mode, extra,
+        signal: abort.signal,
+        onDelta: (piece) => {
+          if (first) { body.textContent = ''; first = false; }
+          acc += piece;
+          body.textContent = acc;
+          body.classList.add('reader__caret');
+          scrollEnd();
+        },
+      });
+      body.classList.remove('reader__caret');
+      const text = (full || acc || '').trim();
+      if (!text) {
+        holder.remove();
+        Store.chat.push('note', '这次没有返回内容。检查模型名或稍后重试。');
+      } else {
+        holder.remove();
+        Store.chat.push('ai', text, { chapterId: target() ? target().id : null });
+      }
+    } catch (e) {
+      body.classList.remove('reader__caret');
+      holder.remove();
+      if (e && e.name === 'AbortError') {
+        const t = acc.trim();
+        if (t) Store.chat.push('ai', t, { chapterId: target() ? target().id : null });
+        else Store.chat.push('note', '已停止生成。');
+      } else {
+        Store.chat.push('note', String(e && e.message || e));
+        // 降级：给出可复制提示词
+        const p = AI.buildPromptOnly({ ask, chapterId: target() ? target().id : null, mode, extra });
+        openFallback(p);
+      }
+    } finally {
+      busy = false;
+      setSendState('send');
+      abort = null;
+      renderFlow();
+    }
+  }
+
+  /** 发送键在「发送 / 停止」之间切换 */
+  function setSendState(state) {
+    if (state === 'stop') {
+      el.send.textContent = '■';
+      el.send.title = '停止生成';
+      el.send.classList.add('send-btn--stop');
+    } else {
+      el.send.textContent = '↑';
+      el.send.title = '发送';
+      el.send.classList.remove('send-btn--stop');
+    }
+  }
+
+  function openFallback(prompt) {
+    App.sheet('连接失败 · 用提示词继续', `
+      <div class="field__hint" style="margin-bottom:10px">
+        复制下面这段，粘到任意 AI 对话框里；把返回的正文再粘回「看剧情 → ✎」即可。
+      </div>
+      <textarea class="textarea" id="fbText" style="min-height:40vh">${esc(prompt)}</textarea>
+      <button class="btn" id="fbCopy" style="margin-top:10px">复制提示词</button>
+      <button class="btn btn--ghost" id="fbPaste" style="margin-top:8px">粘贴返回的正文</button>
+      <div id="fbPasteWrap" hidden style="margin-top:10px">
+        <textarea class="textarea" id="fbBack" placeholder="把 AI 返回的正文粘到这里" style="min-height:30vh"></textarea>
+        <button class="btn" id="fbSave" style="margin-top:8px">写进本章</button>
+      </div>
+    `, (r) => {
+      r.querySelector('#fbCopy').onclick = () => {
+        const t = r.querySelector('#fbText');
+        t.select(); navigator.clipboard?.writeText(t.value).then(() => App.toast('已复制'), () => App.toast('请手动复制'));
+      };
+      r.querySelector('#fbPaste').onclick = () => { r.querySelector('#fbPasteWrap').hidden = false; };
+      r.querySelector('#fbSave').onclick = () => {
+        const txt = r.querySelector('#fbBack').value.trim();
+        if (!txt) return App.toast('还没粘贴内容');
+        let ch = target();
+        if (!ch) ch = Store.chapter.add({ title: '第1章' });
+        const d = Store.chapter.currentDraft(ch);
+        const next = (d && d.text.trim()) ? d.text.replace(/\s+$/, '') + '\n\n' + txt : txt;
+        if (d) Store.chapter.setDraftText(ch.id, next); else Store.chapter.newDraft(ch.id, next, 'AI');
+        App.closeSheet(); ReadView.refresh(); App.toast('已写进 ' + ch.title);
+      };
+    });
+  }
+
+  /* ── 上下文预览 ── */
+  function openContext() {
+    const c = target();
+    const ctx = AI.buildContext(el.input.value.trim(), c ? c.id : null);
+    const rows = ctx.sections.map((s) => `
+      <div class="sec-title">${esc(s.title)}</div>
+      <div class="card__desc" style="font-size:12.5px;max-height:26vh;overflow:auto">${esc(s.text)}</div>
+    `).join('');
+    App.sheet('这次会带进去的料', `
+      <div class="field__hint" style="margin-bottom:6px">共 ${ctx.sections.length} 段。设定按相关性挑选，其余按时间补足。</div>
+      ${rows}
+      <div style="height:16px"></div>
+      <button class="btn btn--ghost" id="ctxCfg">调整带入量</button>
+    `, (r) => {
+      r.querySelector('#ctxCfg').onclick = () => { App.closeSheet(); App.openModelSettings(); };
+    });
+  }
+
+  /* ── 输入框自适应高度 ── */
+  function autoGrow() {
+    el.input.style.height = 'auto';
+    el.input.style.height = Math.min(el.input.scrollHeight, Math.round(window.innerHeight * 0.34)) + 'px';
+  }
+
+  function captureSelection(action, text) {
+    pendingExtra = { action, text };
+    App.go('chat');
+    const preset = { rewrite: '把选中的这段改写一下：', expand: '把选中的这段扩写：', ask: '关于选中的这段：' }[action] || '';
+    el.input.value = preset;
+    hint();
+    autoGrow();
+    el.input.focus();
+    // 光标移到末尾
+    el.input.setSelectionRange(el.input.value.length, el.input.value.length);
+  }
+
+  function init(root) {
+    el = {
+      flow: root.querySelector('#chatFlow'),
+      input: root.querySelector('#chatInput'),
+      send: root.querySelector('#btnSend'),
+      hint: root.querySelector('#chatHint'),
+      target: root.querySelector('#btnTarget'),
+    };
+
+    el.input.addEventListener('input', autoGrow);
+    el.input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+    });
+    el.send.onclick = () => {
+      if (busy) { if (abort) abort.abort(); return; }
+      send();
+    };
+    root.querySelector('#btnQuickContinue').onclick = () => send('接着往下写，保持同一场景与语气。', 'continue');
+    root.querySelector('#btnQuickOutline').onclick = () => send('给这一章列一下要点。', 'outline');
+    root.querySelector('#btnContext').onclick = openContext;
+    root.querySelector('#btnNewChat').onclick = () => {
+      if (!Store.chat.all().length) return;
+      if (!confirm('清空当前对话？（已写进章节的内容不受影响）')) return;
+      Store.chat.clear(); renderFlow();
+    };
+    el.target.onclick = () => {
+      const list = Store.chapter.all();
+      if (!list.length) {
+        const c = Store.chapter.add({});
+        Store.chapter.setActive(c.id); renderTarget(); refreshAll(); App.toast('已新建 ' + c.title);
+        return;
+      }
+      App.sheet('写作目标', list.map((c) => `
+        <div class="kv">
+          <span class="kv__k">${String(c.no).padStart(3, '0')} · ${esc(c.title)}</span>
+          <span class="kv__v">${c.drafts.length} 稿 · ${Store.chapter.textOf(c).length} 字</span>
+          <button class="mini-btn" data-pick="${c.id}">选它</button>
+        </div>`).join('') + `<button class="btn btn--ghost" id="pkNew" style="margin-top:12px">+ 新建一章</button>`,
+        (r) => {
+          r.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
+            Store.chapter.setActive(b.dataset.pick); App.closeSheet(); refreshAll();
+          });
+          r.querySelector('#pkNew').onclick = () => {
+            const c = Store.chapter.add({}); Store.chapter.setActive(c.id);
+            App.closeSheet(); refreshAll();
+          };
+        });
+    };
+
+    renderFlow();
+    renderTarget();
+    hint();
+  }
+
+  function refreshAll() { renderTarget(); hint(); renderFlow(); if (ReadView) ReadView.refresh(); }
+
+  return { init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send };
+})();
+
+/* ─── js/world.js ─── */
+/* ════════════════════════════════════════════
+   临文录 · 模块三：世界线与设定
+   世界线 = 剧情脉络（可收束）；设定 = 人/地/物/规则
+   ════════════════════════════════════════════ */
+
+const WorldView = (() => {
+  let el = {};
+  let seg = 'line';
+  let filter = '';
+
+  const esc = (s) => String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  function render() {
+    el.seg.querySelectorAll('.seg__btn').forEach((b) => b.classList.toggle('is-on', b.dataset.seg === seg));
+    el.body.innerHTML = seg === 'line' ? lineHTML() : settingHTML();
+    bind();
+  }
+
+  /* ── 世界线 ── */
+  function lineHTML() {
+    let list = Store.line.all();
+    if (filter) list = list.filter((l) => (l.name + l.desc + l.at).includes(filter));
+    if (!list.length) {
+      return `<div class="blank">
+        <div class="blank__icon">◇</div>
+        <div class="blank__title">还没有世界线</div>
+        <div class="blank__desc">
+          把主线、支线、待收的伏笔写在这儿。<br>
+          它们会自动进入每次生成的上下文，<br>
+          让 AI 不会写着写着就跑偏。
+        </div>
+        <div class="blank__acts">
+          <button class="btn" data-add>添加第一条</button>
+        </div>
+      </div>`;
+    }
+    return list.map((l) => `
+      <div class="line-item ${l.status === '已收束' ? 'is-closed' : ''}" data-line="${l.id}">
+        <div class="line-item__hd">
+          <span class="line-item__name">${esc(l.name)}</span>
+          ${l.at ? `<span class="line-item__at">${esc(l.at)}</span>` : ''}
+          <span class="card__acts">
+            <button class="mini-btn" data-ltog="${l.id}">${l.status === '已收束' ? '重启' : '收束'}</button>
+            <button class="mini-btn" data-ledit="${l.id}">改</button>
+          </span>
+        </div>
+        ${l.desc ? `<div class="line-item__desc">${esc(l.desc)}</div>` : ''}
+      </div>`).join('');
+  }
+
+  /* ── 设定 ── */
+  function settingHTML() {
+    let list = Store.setting.all();
+    if (filter) list = list.filter((s) => (s.name + s.desc + s.kind).includes(filter));
+    if (!list.length) {
+      return `<div class="blank">
+        <div class="blank__icon">◆</div>
+        <div class="blank__title">还没有设定</div>
+        <div class="blank__desc">
+          人物、地点、物件、规则都放这儿。<br>
+          写作时按相关性自动挑几条带进去，<br>
+          不用每次都重复交代。
+        </div>
+        <div class="blank__acts">
+          <button class="btn" data-add>添加第一条</button>
+        </div>
+      </div>`;
+    }
+    const byKind = {};
+    list.forEach((s) => { (byKind[s.kind] = byKind[s.kind] || []).push(s); });
+    return Object.keys(byKind).map((k) => `
+      <div class="sec-title">${esc(k)} · ${byKind[k].length}</div>
+      ${byKind[k].map((s) => `
+        <div class="card" data-set="${s.id}">
+          <div class="card__top">
+            <span class="card__name">${esc(s.name)}</span>
+            <span class="card__kind" data-k="${esc(s.kind)}">${esc(s.kind)}</span>
+          </div>
+          ${s.desc ? `<div class="card__desc">${esc(s.desc)}</div>` : ''}
+          <div class="card__meta">
+            <span>${new Date(s.at).toLocaleDateString('zh-CN')}</span>
+            <span class="card__acts">
+              <button class="mini-btn" data-sedit="${s.id}">改</button>
+            </span>
+          </div>
+        </div>`).join('')}
+    `).join('');
+  }
+
+  /* ── 编辑面板 ── */
+  function editLine(id) {
+    const l = id ? Store.line.all().find((x) => x.id === id) : null;
+    App.sheet(l ? '编辑世界线' : '新增世界线', `
+      <div class="field">
+        <label class="field__label">名称</label>
+        <input class="input" id="lnName" value="${esc(l ? l.name : '')}" placeholder="例如：寻找星门钥匙">
+      </div>
+      <div class="field">
+        <label class="field__label">锚点（可留空）</label>
+        <input class="input" id="lnAt" value="${esc(l ? l.at : '')}" placeholder="第12章 / 三日后 / 卷一末">
+      </div>
+      <div class="field">
+        <label class="field__label">说明</label>
+        <textarea class="textarea" id="lnDesc" placeholder="这条线要解决什么、现在卡在哪">${esc(l ? l.desc : '')}</textarea>
+      </div>
+      <button class="btn" id="lnSave">${l ? '保存' : '添加'}</button>
+      ${l ? '<button class="btn btn--danger" id="lnDel" style="margin-top:8px">删除</button>' : ''}
+    `, (r) => {
+      r.querySelector('#lnSave').onclick = () => {
+        const patch = {
+          name: r.querySelector('#lnName').value.trim() || '未命名',
+          at: r.querySelector('#lnAt').value.trim(),
+          desc: r.querySelector('#lnDesc').value.trim(),
+        };
+        if (l) Store.line.update(l.id, patch); else Store.line.add(patch);
+        App.closeSheet(); render(); App.toast(l ? '已保存' : '已添加');
+      };
+      if (l) r.querySelector('#lnDel').onclick = () => {
+        if (!confirm('删除这条世界线？')) return;
+        Store.line.remove(l.id); App.closeSheet(); render(); App.toast('已删除');
+      };
+    });
+  }
+
+  function editSetting(id) {
+    const s = id ? Store.setting.all().find((x) => x.id === id) : null;
+    App.sheet(s ? '编辑设定' : '新增设定', `
+      <div class="field">
+        <label class="field__label">名称</label>
+        <input class="input" id="stName" value="${esc(s ? s.name : '')}" placeholder="人物名 / 地点名 / 规则名">
+      </div>
+      <div class="field">
+        <label class="field__label">类别</label>
+        <select class="select" id="stKind">
+          ${['人物', '地点', '物件', '规则', '设定'].map((k) => `<option ${s && s.kind === k ? 'selected' : ''}>${k}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label">说明</label>
+        <textarea class="textarea" id="stDesc" placeholder="越具体越好：外貌、脾气、口癖、限制条件">${esc(s ? s.desc : '')}</textarea>
+      </div>
+      <button class="btn" id="stSave">${s ? '保存' : '添加'}</button>
+      ${s ? '<button class="btn btn--danger" id="stDel" style="margin-top:8px">删除</button>' : ''}
+    `, (r) => {
+      r.querySelector('#stSave').onclick = () => {
+        const patch = {
+          name: r.querySelector('#stName').value.trim() || '未命名',
+          kind: r.querySelector('#stKind').value,
+          desc: r.querySelector('#stDesc').value.trim(),
+        };
+        if (s) Store.setting.update(s.id, patch); else Store.setting.add(patch);
+        App.closeSheet(); render(); App.toast(s ? '已保存' : '已添加');
+      };
+      if (s) r.querySelector('#stDel').onclick = () => {
+        if (!confirm('删除这条设定？')) return;
+        Store.setting.remove(s.id); App.closeSheet(); render(); App.toast('已删除');
+      };
+    });
+  }
+
+  function bind() {
+    el.body.querySelectorAll('[data-add]').forEach((b) => b.onclick = () => {
+      seg === 'line' ? editLine(null) : editSetting(null);
+    });
+    el.body.querySelectorAll('[data-ltog]').forEach((b) => b.onclick = (e) => {
+      e.stopPropagation(); Store.line.toggle(b.dataset.ltog); render();
+    });
+    el.body.querySelectorAll('[data-ledit]').forEach((b) => b.onclick = (e) => {
+      e.stopPropagation(); editLine(b.dataset.ledit);
+    });
+    el.body.querySelectorAll('[data-sedit]').forEach((b) => b.onclick = (e) => {
+      e.stopPropagation(); editSetting(b.dataset.sedit);
+    });
+    el.body.querySelectorAll('[data-line]').forEach((n) => n.onclick = () => editLine(n.dataset.line));
+    el.body.querySelectorAll('[data-set]').forEach((n) => n.onclick = () => editSetting(n.dataset.set));
+  }
+
+  function init(root) {
+    el = { seg: root.querySelector('#worldSeg'), body: root.querySelector('#worldBody') };
+    el.seg.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-seg]');
+      if (!b) return;
+      seg = b.dataset.seg; render();
+    });
+    root.querySelector('#btnAddWorld').onclick = () => (seg === 'line' ? editLine(null) : editSetting(null));
+    render();
+  }
+
+  return { init, render };
+})();
+
+/* ─── js/app.js ─── */
+/* ════════════════════════════════════════════
+   临文录 · 主控
+   视图切换 / 抽屉 / 提示 / 设置
+   ════════════════════════════════════════════ */
+
+const App = (() => {
+  let el = {};
+  let cur = 'read';
+  let sheetOnMount = null;
+
+  const esc = (s) => String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  /* ── 视图切换 ── */
+  function go(name) {
+    if (!['read', 'chat', 'world'].includes(name)) return;
+    cur = name;
+    const map = { read: el.viewRead, chat: el.viewChat, world: el.viewWorld };
+    Object.entries(map).forEach(([k, node]) => { node.hidden = k !== name; });
+    el.tabbar.querySelectorAll('.tab').forEach((t) => t.classList.toggle('is-on', t.dataset.go === name));
+    if (name !== 'read') document.body.classList.remove('is-reading');
+    if (name === 'chat' && ChatView) ChatView.refreshAll();
+    if (name === 'world' && WorldView) WorldView.render();
+    if (name === 'read' && ReadView) ReadView.refresh();
+  }
+
+  /* ── Toast ── */
+  let toastTimer = null;
+  function toast(msg, ms = 1900) {
+    el.toast.textContent = msg;
+    el.toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.toast.hidden = true; }, ms);
+  }
+
+  /* ── 抽屉 ── */
+  function sheet(title, html, onMount) {
+    el.sheetTitle.textContent = title;
+    el.sheetBody.innerHTML = html;
+    el.sheet.hidden = false;
+    sheetOnMount = onMount;
+    if (onMount) onMount(el.sheetBody);
+  }
+  function closeSheet() {
+    el.sheet.hidden = true;
+    el.sheetBody.innerHTML = '';
+    sheetOnMount = null;
+  }
+
+  /* ── 设置：模型 ── */
+  function openModelSettings() {
+    const c = Store.get().config;
+    const ready = Store.config.ready();
+    sheet('模型设置', `
+      <div class="field">
+        <label class="field__label">接口地址（OpenAI 兼容）</label>
+        <input class="input" id="cfgBase" value="${esc(c.apiBase)}" placeholder="https://api.deepseek.com/v1">
+        <div class="field__hint">尾部可带或不带 <code>/chat/completions</code>，会自动补全。</div>
+      </div>
+      <div class="field">
+        <label class="field__label">API Key</label>
+        <input class="input" id="cfgKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-…">
+        <div class="field__hint">只存在这台设备的浏览器里，不会上传到别处。</div>
+      </div>
+      <div class="field">
+        <label class="field__label">模型名</label>
+        <input class="input" id="cfgModel" value="${esc(c.model)}" placeholder="deepseek-chat">
+      </div>
+      <div class="row">
+        <div class="field">
+          <label class="field__label">温度 ${Number(c.temperature).toFixed(1)}</label>
+          <input type="range" id="cfgTemp" min="0" max="1.6" step="0.1" value="${c.temperature}" style="width:100%">
+        </div>
+      </div>
+      <div class="field">
+        <label class="field__label">文风约束</label>
+        <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
+      </div>
+      <div class="sec-title">带入量（省 token）</div>
+      <div class="row">
+        <div class="field">
+          <label class="field__label">设定条数</label>
+          <input class="input" id="cfgSet" type="number" min="0" max="60" value="${c.ctxSettings}">
+        </div>
+        <div class="field">
+          <label class="field__label">本章尾部字数</label>
+          <input class="input" id="cfgTail" type="number" min="0" max="6000" step="100" value="${c.ctxTail}">
+        </div>
+      </div>
+      <button class="btn" id="cfgSave">保存</button>
+      <button class="btn btn--ghost" id="cfgTest" style="margin-top:8px">连通性测试</button>
+      <div class="field__hint" id="cfgOut" style="margin-top:10px">${ready ? '已配置' : '还没填 Key'}</div>
+    `, (r) => {
+      const g = (id) => r.querySelector(id);
+      const tempRange = g('#cfgTemp');
+      const tempLabel = tempRange.previousElementSibling;
+      tempRange.oninput = () => { tempLabel.textContent = '温度 ' + Number(tempRange.value).toFixed(1); };
+
+      g('#cfgSave').onclick = () => {
+        Store.config.set({
+          apiBase: g('#cfgBase').value.trim() || 'https://api.deepseek.com/v1',
+          apiKey: g('#cfgKey').value.trim(),
+          model: g('#cfgModel').value.trim() || 'deepseek-chat',
+          temperature: Number(tempRange.value),
+          style: g('#cfgStyle').value.trim(),
+          ctxSettings: Number(g('#cfgSet').value) || 0,
+          ctxTail: Number(g('#cfgTail').value) || 0,
+        });
+        closeSheet(); ChatView.hint(); toast('已保存');
+      };
+      g('#cfgTest').onclick = async () => {
+        g('#cfgSave').click();
+        g('#cfgOut').textContent = '测试中…';
+        const res = await AI.probe();
+        g('#cfgOut').innerHTML = res.ok
+          ? '<span style="color:var(--green)">连通正常 ✓</span>'
+          : '<span style="color:var(--red)">失败：' + esc(res.reason) + '</span>';
+      };
+    });
+  }
+
+  /* ── 设置：作品 ── */
+  function openBookSettings() {
+    const b = Store.get().book;
+    const st = Store.get();
+    sheet('作品', `
+      <div class="field">
+        <label class="field__label">书名</label>
+        <input class="input" id="bkTitle" value="${esc(b.title)}">
+      </div>
+      <div class="field">
+        <label class="field__label">题材</label>
+        <input class="input" id="bkGenre" value="${esc(b.genre)}" placeholder="都市异能 / 玄幻 / 悬疑">
+      </div>
+      <div class="field">
+        <label class="field__label">一句话设定</label>
+        <textarea class="textarea" id="bkDesc" style="min-height:70px">${esc(b.desc)}</textarea>
+      </div>
+      <button class="btn" id="bkSave">保存</button>
+      <div class="sec-title">概览</div>
+      <div class="kv"><span class="kv__k">章节</span><span class="kv__v">${st.chapters.length}</span></div>
+      <div class="kv"><span class="kv__k">总字数</span><span class="kv__v">${st.chapters.reduce((n, c) => n + Store.chapter.textOf(c).length, 0)}</span></div>
+      <div class="kv"><span class="kv__k">设定</span><span class="kv__v">${st.settings.length}</span></div>
+      <div class="kv"><span class="kv__k">世界线</span><span class="kv__v">${st.lines.length}（未收束 ${st.lines.filter((l) => l.status !== '已收束').length}）</span></div>
+    `, (r) => {
+      r.querySelector('#bkSave').onclick = () => {
+        Store.get().book.title = r.querySelector('#bkTitle').value.trim() || '未命名作品';
+        Store.get().book.genre = r.querySelector('#bkGenre').value.trim();
+        Store.get().book.desc = r.querySelector('#bkDesc').value.trim();
+        Store.save(); renderTop(); toast('已保存');
+        closeSheet();
+      };
+    });
+  }
+
+  /* ── 设置：数据 ── */
+  function openDataSettings() {
+    sheet('数据', `
+      <button class="btn" id="dExp">导出存档（.json）</button>
+      <button class="btn btn--ghost" id="dImp" style="margin-top:8px">导入存档</button>
+      <input type="file" id="dFile" accept=".json,application/json" hidden>
+      <div class="sec-title">正文</div>
+      <button class="btn btn--ghost" id="dMd">导出正文（.md）</button>
+      <button class="btn btn--ghost" id="dTxt" style="margin-top:8px">导入正文（.txt / .md，自动按章切分）</button>
+      <input type="file" id="dTxtFile" accept=".txt,.md,text/plain,text/markdown" hidden>
+      <div class="field__hint" style="margin-top:10px">
+        导入时会识别「第N章 / 第N回 / 第N节」这类行作为分章标题，切不开就整篇作为一章。
+      </div>
+      <button class="btn btn--danger" id="dReset" style="margin-top:22px">清空全部数据</button>
+      <div class="field__hint" style="margin-top:14px">
+        数据存在这台设备的浏览器里。换设备、换浏览器、清理缓存都会丢，<b>重要内容请定期导出</b>。
+      </div>
+      <div class="sec-title">关于</div>
+      <div class="field__hint">
+        临文录 · 纯前端小说创作台<br>
+        看剧情 / 提要求 / 世界线与设定<br>
+        零依赖、零外链，可离线使用。<br>
+        <span style="opacity:.7">一致性设计参考自 webnovel-writer（GPL-3.0）。</span>
+      </div>
+    `, (r) => {
+      r.querySelector('#dExp').onclick = () => {
+        const name = (Store.get().book.title || '临文录').replace(/[\\/:*?"<>|]/g, '_');
+        download(name + '.json', Store.exportJSON(), 'application/json');
+        toast('已导出');
+      };
+      r.querySelector('#dImp').onclick = () => r.querySelector('#dFile').click();
+      r.querySelector('#dFile').onchange = (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        const rd = new FileReader();
+        rd.onload = () => {
+          const res = Store.importJSON(String(rd.result || ''));
+          if (!res.ok) return toast('导入失败：' + res.reason, 3200);
+          closeSheet(); renderAll();
+          toast(`已导入：${res.chapters} 章 / ${res.settings} 设定 / ${res.lines} 世界线`, 2600);
+        };
+        rd.readAsText(f, 'utf-8');
+      };
+      r.querySelector('#dMd').onclick = () => {
+        const st = Store.get();
+        const md = [`# ${st.book.title}`, st.book.genre ? `> ${st.book.genre}` : '', '']
+          .concat(st.chapters.map((c) => `\n\n## ${c.title}\n\n${Store.chapter.textOf(c)}`)).join('\n');
+        download((st.book.title || '临文录') + '.md', md, 'text/markdown');
+        toast('已导出正文');
+      };
+      r.querySelector('#dTxt').onclick = () => r.querySelector('#dTxtFile').click();
+      r.querySelector('#dTxtFile').onchange = (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        const rd = new FileReader();
+        rd.onload = () => {
+          const n = importPlainText(String(rd.result || ''));
+          closeSheet(); renderAll();
+          toast(n ? `已导入 ${n} 章` : '没找到可导入的内容', 2600);
+        };
+        rd.readAsText(f, 'utf-8');
+      };
+      r.querySelector('#dReset').onclick = () => {
+        if (!confirm('清空全部数据？这会删掉所有章节、设定和对话，且不可恢复。')) return;
+        if (!confirm('真的确定？建议先导出存档。')) return;
+        Store.reset(); Store.load && null; closeSheet(); renderAll(); toast('已清空');
+      };
+    });
+  }
+
+  function download(filename, text, mime) {
+    try {
+      const blob = new Blob([text], { type: mime + ';charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    } catch (e) {
+      toast('导出失败：' + (e.message || e), 3000);
+    }
+  }
+
+  /* ── 导入纯文本：按「第N章」切分，切不开就整篇一章 ── */
+  function importPlainText(text) {
+    const src = text.replace(/\r\n/g, '\n').trim();
+    if (!src) return 0;
+    const re = /^(?:#{1,3}\s*)?(第\s*[0-9一二三四五六七八九十百千零两]+\s*[章卷回节]\s*[^\n]{0,30})$/;
+    const lines = src.split('\n');
+    const marks = [];
+    lines.forEach((l, i) => { if (re.test(l.trim()) && l.trim().length <= 40) marks.push(i); });
+
+    let count = 0;
+    if (marks.length === 0) {
+      Store.chapter.add({ title: '导入的正文', text: src, source: '导入' });
+      return 1;
+    }
+    if (marks[0] > 0) {  // 章标题之前的序言也保留
+      const head = lines.slice(0, marks[0]).join('\n').trim();
+      if (head) { Store.chapter.add({ title: '序', text: head, source: '导入' }); count++; }
+    }
+    marks.forEach((start, k) => {
+      const end = k + 1 < marks.length ? marks[k + 1] : lines.length;
+      const title = lines[start].trim().replace(/^#{1,3}\s*/, '');
+      const body = lines.slice(start + 1, end).join('\n').trim();
+      Store.chapter.add({ title, text: body, source: '导入' });
+      count++;
+    });
+    return count;
+  }
+
+  /* ── 顶栏渲染 ── */
+  function renderTop() {
+    const st = Store.get();
+    el.bookName.textContent = st.book.title || '临文录';
+    const total = st.chapters.reduce((n, c) => n + Store.chapter.textOf(c).length, 0);
+    const parts = [];
+    if (st.book.genre) parts.push(st.book.genre);
+    parts.push(`${st.chapters.length} 章`);
+    if (total > 0) parts.push((total >= 10000 ? (total / 10000).toFixed(1) + ' 万字' : total + ' 字'));
+    el.bookMeta.textContent = parts.join(' · ');
+  }
+
+  /* ── 更多菜单 ── */
+  function openMenu() {
+    sheet('菜单', `
+      <button class="btn btn--ghost" id="mModel">模型设置</button>
+      <button class="btn btn--ghost" id="mBook" style="margin-top:8px">作品信息</button>
+      <button class="btn btn--ghost" id="mData" style="margin-top:8px">数据与导出</button>
+      <div class="sec-title">快捷键</div>
+      <div class="field__hint">
+        Ctrl / ⌘ + Enter —— 发送<br>
+        选中正文后 —— 改写 / 扩写 / 提问 / 存为设定
+      </div>
+    `, (r) => {
+      r.querySelector('#mModel').onclick = () => { closeSheet(); openModelSettings(); };
+      r.querySelector('#mBook').onclick = () => { closeSheet(); openBookSettings(); };
+      r.querySelector('#mData').onclick = () => { closeSheet(); openDataSettings(); };
+    });
+  }
+
+  function renderAll() {
+    renderTop();
+    if (ReadView) ReadView.refresh();
+    if (ChatView) ChatView.refreshAll();
+    if (WorldView) WorldView.render();
+  }
+
+  /* ── 启动 ── */
+  function boot() {
+    el = {
+      viewRead: document.getElementById('viewRead'),
+      viewChat: document.getElementById('viewChat'),
+      viewWorld: document.getElementById('viewWorld'),
+      tabbar: document.getElementById('tabbar'),
+      bookName: document.getElementById('bookName'),
+      bookMeta: document.getElementById('bookMeta'),
+      sheet: document.getElementById('sheet'),
+      sheetTitle: document.getElementById('sheetTitle'),
+      sheetBody: document.getElementById('sheetBody'),
+      toast: document.getElementById('toast'),
+    };
+
+    Store.load();
+
+    ReadView.init(el.viewRead);
+    ChatView.init(el.viewChat);
+    WorldView.init(el.viewWorld);
+
+    el.tabbar.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-go]');
+      if (b) go(b.dataset.go);
+    });
+    document.getElementById('btnMenu').onclick = openMenu;
+    document.getElementById('btnBook').onclick = openBookSettings;
+    document.getElementById('btnStream').onclick = () => {
+      document.body.classList.toggle('is-stream');
+      toast(document.body.classList.contains('is-stream') ? '专注模式（再点一次退出）' : '已退出专注');
+    };
+
+    el.sheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { if (!el.sheet.hidden) closeSheet(); else ReadView.clearSelection(); }
+    });
+
+    // 第一次使用：没有书也没有章节时给一点起手素材
+    const st = Store.get();
+    if (!st.chapters.length && !st.settings.length) {
+      st.book.title = '未命名作品';
+      Store.save();
+    }
+
+    Store.on((type) => {
+      if (type === 'persist-failed') {
+        toast('本地存储失败：浏览器可能禁用了存储。请用「数据 → 导出存档」保存。', 6000);
+      }
+      renderTop();
+    });
+
+    // 第一次打开：直接把模型设置摆到面前，省得找
+    let seen = false;
+    try { seen = !!localStorage.getItem('linwenlu.seen'); } catch (_) { }
+    if (!seen) {
+      try { localStorage.setItem('linwenlu.seen', '1'); } catch (_) { }
+      if (!Store.config.ready()) setTimeout(() => openModelSettings(), 620);
+    }
+
+    go('read');
+    renderTop();
+    ChatView.hint();
+  }
+
+  return {
+    boot, go, toast, sheet, closeSheet,
+    openModelSettings, openBookSettings, openDataSettings,
+    captureSelection: (a, t) => ChatView.captureSelection(a, t),
+  };
+})();
+
+document.addEventListener('DOMContentLoaded', App.boot);
+</script>
+</body>
+</html>

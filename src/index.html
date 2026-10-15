@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12100e">
+<meta name="description" content="临文录 · 一个纯前端的极简小说创作台：看剧情、提要求、管设定。">
+<title>临文录</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ══ 顶栏 ══ -->
+<header class="topbar">
+  <button class="topbar__title" id="btnBook" title="作品设置">
+    <span class="topbar__name" id="bookName">临文录</span>
+    <span class="topbar__meta" id="bookMeta">未命名作品</span>
+  </button>
+  <div class="topbar__actions">
+    <button class="icon-btn" id="btnStream" title="专注模式">◎</button>
+    <button class="icon-btn" id="btnMenu" title="更多">⋯</button>
+  </div>
+</header>
+
+<!-- ══ 主区：三个模块 ══ -->
+<main class="stage">
+
+  <!-- ── 模块一：看剧情 ── -->
+  <section class="view view--read" id="viewRead" data-view="read">
+    <div class="pane pane--list" id="chapterListPane">
+      <div class="pane__head">
+        <h2 class="pane__title">剧情</h2>
+        <button class="mini-btn" id="btnNewChapter">+ 新章</button>
+      </div>
+      <div class="chapter-list" id="chapterList"></div>
+    </div>
+
+    <div class="pane pane--body" id="chapterBodyPane">
+      <div class="reader__head">
+        <button class="icon-btn reader__back" id="btnBackToList" title="返回目录">‹</button>
+        <div class="reader__title" id="readerTitle">选择一章开始</div>
+        <div class="reader__tools">
+          <button class="mini-btn" id="btnVersions" title="版本">稿 <span id="verBadge">—</span></button>
+          <button class="mini-btn" id="btnEditChapter" title="改写正文">✎</button>
+        </div>
+      </div>
+      <article class="reader" id="reader" tabindex="0">
+        <div class="empty" id="readerEmpty">
+          <p>左边选一章，<br>或者按下面的「提要求」开始写。</p>
+        </div>
+      </article>
+      <div class="selbar" id="selbar" hidden>
+        <span class="selbar__label">选中了 <b id="selCount">0</b> 字</span>
+        <button class="mini-btn" data-sel="rewrite">改写</button>
+        <button class="mini-btn" data-sel="expand">扩写</button>
+        <button class="mini-btn" data-sel="ask">提问</button>
+        <button class="mini-btn" data-sel="setting">存为设定</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 模块二：提要求 ── -->
+  <section class="view view--chat" id="viewChat" data-view="chat" hidden>
+    <div class="chat__head">
+      <div class="chat__target">
+        <span class="chat__targetLabel">写作目标</span>
+        <button class="chip" id="btnTarget"></button>
+      </div>
+      <button class="mini-btn" id="btnContext" title="查看将带入的上下文">上下文</button>
+    </div>
+
+    <div class="chat__flow" id="chatFlow"></div>
+
+    <div class="chat__composer">
+      <div class="chat__hint" id="chatHint"></div>
+      <div class="composer">
+        <textarea id="chatInput" rows="1" placeholder="说要写什么：主角去码头见旧友，气氛要冷"></textarea>
+        <button class="send-btn" id="btnSend" title="发送">↑</button>
+      </div>
+      <div class="composer__bar">
+        <button class="mini-btn" id="btnQuickContinue">续写</button>
+        <button class="mini-btn" id="btnQuickOutline">本章要点</button>
+        <button class="mini-btn" id="btnNewChat">清空对话</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 模块三：世界线与设定 ── -->
+  <section class="view view--world" id="viewWorld" data-view="world" hidden>
+    <div class="seg" id="worldSeg">
+      <button class="seg__btn is-on" data-seg="line">世界线</button>
+      <button class="seg__btn" data-seg="setting">设定</button>
+    </div>
+
+    <div class="world__body" id="worldBody"></div>
+
+    <button class="fab" id="btnAddWorld" title="新增">+</button>
+  </section>
+
+</main>
+
+<!-- ══ 底部导航 ══ -->
+<nav class="tabbar" id="tabbar">
+  <button class="tab is-on" data-go="read"><i>▤</i><span>看剧情</span></button>
+  <button class="tab" data-go="chat"><i>✎</i><span>提要求</span></button>
+  <button class="tab" data-go="world"><i>◇</i><span>世界线</span></button>
+</nav>
+
+<!-- ══ 抽屉：设置 ══ -->
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet__mask" data-close></div>
+  <div class="sheet__panel">
+    <div class="sheet__head">
+      <h3 id="sheetTitle">设置</h3>
+      <button class="icon-btn" data-close>✕</button>
+    </div>
+    <div class="sheet__body" id="sheetBody"></div>
+  </div>
+</div>
+
+<!-- ══ 轻提示 ══ -->
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/store.js"></script>
+<script src="js/api.js"></script>
+<script src="js/read.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/world.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
