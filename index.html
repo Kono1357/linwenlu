@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-15 21:50 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -565,6 +565,24 @@ input[type="number"] { font-family: var(--mono); }
 .pickrow__k { flex: 1; }
 .pickrow__n { font-size: 12px; color: var(--ink-3); }
 
+/* 有新版本时的浮动提示 */
+.updatebar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(80px + var(--safe-b)); z-index: 75;
+  padding: 9px 17px; border-radius: 20px;
+  background: var(--gold); color: #201c0d;
+  font-size: 12.5px; font-weight: 500;
+  box-shadow: 0 8px 26px rgba(0,0,0,.55);
+  animation: toastIn .24s ease;
+  max-width: calc(100vw - 32px);
+}
+.buildstamp {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--ink-3); font-family: var(--mono);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.buildstamp .mini-btn { font-family: var(--ui); }
+
 /* ─────────── Toast ─────────── */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
@@ -700,6 +718,8 @@ body.is-stream .reader__head { display: none; }
   .selbar { bottom: 10px; }
 }
 </style>
+<meta name="build" content="2026-10-15 21:50">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
 
@@ -2998,6 +3018,7 @@ const App = (() => {
         零依赖、零外链，可离线使用。<br>
         <span style="opacity:.7">一致性设计参考自 webnovel-writer（GPL-3.0）。</span>
       </div>
+      <div class="buildstamp" id="buildStamp"></div>
     `, (r) => {
       r.querySelector('#dExp').onclick = () => {
         const name = (Store.get().book.title || '临文录').replace(/[\\/:*?"<>|]/g, '_');
@@ -3030,6 +3051,20 @@ const App = (() => {
         if (!confirm('真的确定？建议先导出存档。')) return;
         Store.reset(); closeSheet(); renderAll(); toast('已清空');
       };
+      const bs = r.querySelector('#buildStamp');
+      if (bs) {
+        bs.innerHTML = `当前版本 build ${currentBuild()}　
+          <button class="mini-btn" id="bsCheck">检查更新</button>`;
+        r.querySelector('#bsCheck').onclick = async () => {
+          bs.querySelector('#bsCheck').textContent = '检查中…';
+          await checkUpdate();
+          setTimeout(() => {
+            const btn = bs.querySelector('#bsCheck');
+            if (!btn) return;
+            btn.textContent = document.getElementById('updateBar') ? '有新版本，点下面刷新' : '已是最新';
+          }, 1400);
+        };
+      }
       if (anchor === 'text') {
         const s = r.querySelector('#secText');
         if (s) s.scrollIntoView({ block: 'start' });
@@ -3248,6 +3283,36 @@ const App = (() => {
     if (WorldView) WorldView.render();
   }
 
+  /* ── 版本自检 ──
+     GitHub Pages 会给 HTML 挂 10 分钟缓存，手机上更顽固，导致"我明明发了你看不到"。
+     所以打开页面后主动取一次最新 HTML，比对构建标记，不一样就提示刷新。 */
+  function currentBuild() {
+    const m = document.querySelector('meta[name="build"]');
+    return m ? m.content : 'dev';
+  }
+
+  function showUpdateBar(remote) {
+    if (document.getElementById('updateBar')) return;
+    const b = document.createElement('button');
+    b.id = 'updateBar';
+    b.className = 'updatebar';
+    b.textContent = `有新版本 ${remote} · 点此刷新`;
+    b.onclick = () => { location.href = location.pathname + '?v=' + Date.now(); };
+    document.body.appendChild(b);
+  }
+
+  async function checkUpdate() {
+    if (!/^https?:$/.test(location.protocol)) return;   // 本地 file:// 直开不做这事
+    const mine = currentBuild();
+    if (mine === 'dev') return;
+    try {
+      const res = await fetch(location.pathname + '?_=' + Date.now(), { cache: 'no-store' });
+      const txt = await res.text();
+      const m = txt.match(/<meta name="build" content="([^"]+)"/);
+      if (m && m[1] && m[1] !== mine) showUpdateBar(m[1]);
+    } catch (_) { /* 离线就当没有 */ }
+  }
+
   /* ── 启动 ── */
   function boot() {
     el = {
@@ -3309,6 +3374,7 @@ const App = (() => {
     go('read');
     renderTop();
     ChatView.hint();
+    setTimeout(checkUpdate, 2200);
   }
 
   return {

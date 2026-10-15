@@ -467,6 +467,17 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
+    // ⑰ 版本标记：让你一眼看出手上这份是哪一版
+    report.steps.push({
+      step: 'version', check: await cdp.eval(`(function(){
+      var m = document.querySelector('meta[name="build"]');
+      return {
+        构建标记: m ? m.content : '（没有 —— 说明是旧版，或者直接开的源码）',
+        首行注释: document.documentElement.previousSibling
+          && String(document.documentElement.previousSibling.nodeValue || '').indexOf('build') >= 0
+      };
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {

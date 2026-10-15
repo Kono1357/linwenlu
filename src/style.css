@@ -554,6 +554,24 @@ input[type="number"] { font-family: var(--mono); }
 .pickrow__k { flex: 1; }
 .pickrow__n { font-size: 12px; color: var(--ink-3); }
 
+/* 有新版本时的浮动提示 */
+.updatebar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(80px + var(--safe-b)); z-index: 75;
+  padding: 9px 17px; border-radius: 20px;
+  background: var(--gold); color: #201c0d;
+  font-size: 12.5px; font-weight: 500;
+  box-shadow: 0 8px 26px rgba(0,0,0,.55);
+  animation: toastIn .24s ease;
+  max-width: calc(100vw - 32px);
+}
+.buildstamp {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--ink-3); font-family: var(--mono);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.buildstamp .mini-btn { font-family: var(--ui); }
+
 /* ─────────── Toast ─────────── */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);

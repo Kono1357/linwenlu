@@ -207,6 +207,7 @@ const App = (() => {
         零依赖、零外链，可离线使用。<br>
         <span style="opacity:.7">一致性设计参考自 webnovel-writer（GPL-3.0）。</span>
       </div>
+      <div class="buildstamp" id="buildStamp"></div>
     `, (r) => {
       r.querySelector('#dExp').onclick = () => {
         const name = (Store.get().book.title || '临文录').replace(/[\\/:*?"<>|]/g, '_');
@@ -239,6 +240,20 @@ const App = (() => {
         if (!confirm('真的确定？建议先导出存档。')) return;
         Store.reset(); closeSheet(); renderAll(); toast('已清空');
       };
+      const bs = r.querySelector('#buildStamp');
+      if (bs) {
+        bs.innerHTML = `当前版本 build ${currentBuild()}　
+          <button class="mini-btn" id="bsCheck">检查更新</button>`;
+        r.querySelector('#bsCheck').onclick = async () => {
+          bs.querySelector('#bsCheck').textContent = '检查中…';
+          await checkUpdate();
+          setTimeout(() => {
+            const btn = bs.querySelector('#bsCheck');
+            if (!btn) return;
+            btn.textContent = document.getElementById('updateBar') ? '有新版本，点下面刷新' : '已是最新';
+          }, 1400);
+        };
+      }
       if (anchor === 'text') {
         const s = r.querySelector('#secText');
         if (s) s.scrollIntoView({ block: 'start' });
@@ -457,6 +472,36 @@ const App = (() => {
     if (WorldView) WorldView.render();
   }
 
+  /* ── 版本自检 ──
+     GitHub Pages 会给 HTML 挂 10 分钟缓存，手机上更顽固，导致"我明明发了你看不到"。
+     所以打开页面后主动取一次最新 HTML，比对构建标记，不一样就提示刷新。 */
+  function currentBuild() {
+    const m = document.querySelector('meta[name="build"]');
+    return m ? m.content : 'dev';
+  }
+
+  function showUpdateBar(remote) {
+    if (document.getElementById('updateBar')) return;
+    const b = document.createElement('button');
+    b.id = 'updateBar';
+    b.className = 'updatebar';
+    b.textContent = `有新版本 ${remote} · 点此刷新`;
+    b.onclick = () => { location.href = location.pathname + '?v=' + Date.now(); };
+    document.body.appendChild(b);
+  }
+
+  async function checkUpdate() {
+    if (!/^https?:$/.test(location.protocol)) return;   // 本地 file:// 直开不做这事
+    const mine = currentBuild();
+    if (mine === 'dev') return;
+    try {
+      const res = await fetch(location.pathname + '?_=' + Date.now(), { cache: 'no-store' });
+      const txt = await res.text();
+      const m = txt.match(/<meta name="build" content="([^"]+)"/);
+      if (m && m[1] && m[1] !== mine) showUpdateBar(m[1]);
+    } catch (_) { /* 离线就当没有 */ }
+  }
+
   /* ── 启动 ── */
   function boot() {
     el = {
@@ -518,6 +563,7 @@ const App = (() => {
     go('read');
     renderTop();
     ChatView.hint();
+    setTimeout(checkUpdate, 2200);
   }
 
   return {

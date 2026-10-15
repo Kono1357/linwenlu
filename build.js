@@ -44,13 +44,22 @@ function build() {
     console.warn('⚠ 产物里还有外部引用：', external.join(', '));
   }
 
-  // 4) 落盘（顶部留一行生成标记，防止有人直接改产物）
-  const banner = `<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 -->\n`;
+  // 4) 注入构建标记：让你一眼看出手上这份是哪一版，不用猜缓存
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  html = html.replace('</head>', () =>
+    `<meta name="build" content="${stamp}">\n` +
+    `<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">\n` +
+    `</head>`);
+
+  // 5) 落盘（顶部留一行生成标记，防止有人直接改产物）
+  const banner = `<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build ${stamp} -->\n`;
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, banner + html, 'utf-8');
 
   const kb = (Buffer.byteLength(html, 'utf-8') / 1024).toFixed(1);
-  console.log(`✓ 构建完成  index.html  ${kb} KB  （内联 ${scripts.length} 个脚本）`);
+  console.log(`✓ 构建完成  index.html  ${kb} KB  （内联 ${scripts.length} 个脚本，build ${stamp}）`);
 }
 
 build();
