@@ -6,7 +6,7 @@
 const App = (() => {
   let el = {};
   let cur = 'read';
-  let sheetOnMount = null;
+  let lastSheetError = null;
 
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -33,18 +33,36 @@ const App = (() => {
     toastTimer = setTimeout(() => { el.toast.hidden = true; }, ms);
   }
 
-  /* ── 抽屉 ── */
+  /* ── 抽屉 ──
+     这里必须给 onMount 兜一层：绑定代码里任何一个 querySelector 落空，
+     后面所有按钮就全都绑不上 —— 面板显示正常、点哪儿都没反应，
+     表现就是"退不出来"。宁可少几个次级按钮，也不能整片失灵。 */
   function sheet(title, html, onMount) {
     el.sheetTitle.textContent = title;
     el.sheetBody.innerHTML = html;
     el.sheet.hidden = false;
-    sheetOnMount = onMount;
-    if (onMount) onMount(el.sheetBody);
+    document.body.classList.add('is-sheet');
+    lastSheetError = null;
+    if (onMount) {
+      try {
+        onMount(el.sheetBody);
+      } catch (e) {
+        lastSheetError = { title: title, error: String((e && e.message) || e) };
+        console.error('[面板] 「' + title + '」绑定出错：', e);
+        // 兜底：至少保证关得掉
+        const x = el.sheet.querySelector('.sheet__head [data-close]');
+        if (x) x.onclick = () => closeSheet();
+        // 把失败的按钮标出来，用户至少知道哪块坏了，而不是怀疑整个应用
+        el.sheetBody.querySelectorAll('button[id]').forEach((b) => {
+          if (typeof b.onclick !== 'function' && !b.dataset.close) b.classList.add('is-broken');
+        });
+      }
+    }
   }
   function closeSheet() {
     el.sheet.hidden = true;
     el.sheetBody.innerHTML = '';
-    sheetOnMount = null;
+    document.body.classList.remove('is-sheet');
   }
 
   /* ── 设置：模型 ── */
@@ -73,22 +91,22 @@ const App = (() => {
         </div>
       </div>
       <div class="field">
-        <label class="field__label">文风约束</label>
+        <label class="field__label">文风约束（可以随便改）</label>
         <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
       </div>
-      <div class="sec-title">去 AI 味</div>
+      <div class="sec-title">写作铁律</div>
       <label class="pickrow">
         <input type="checkbox" id="cfgDeai" ${c.deai === false ? '' : 'checked'}>
-        <span class="pickrow__k">每次生成都注入「去 AI 味铁律」</span>
+        <span class="pickrow__k">每次生成都注入下面的铁律</span>
       </label>
       <div class="field">
-        <label class="field__label">自己再补几条禁令（可选）</label>
-        <textarea class="textarea" id="cfgDeaiRules" style="min-height:80px"
-          placeholder="一行一条，例如：&#10;不许用「值得注意」&#10;对话不许超过三句连着说">${esc(c.deaiRules || '')}</textarea>
+        <label class="field__label">内容可以随便改、删、加</label>
+        <textarea class="textarea" id="cfgDeaiRules" style="min-height:230px">${esc(c.deaiRules || AI.DEAI_RULES)}</textarea>
         <div class="field__hint">
-          内置的铁律见下方；你补的会拼在后面。<br>
-          <span style="opacity:.75">禁用「不是…而是…」／学术腔／三段论／「当…时」／给语气打标签／无中生有内心戏；明喻全篇≤2 次；克制「认真、光芒、摩挲、挑眉、微微」等词；对话要像真人、角色要有辨识度。</span>
+          这一整块会**原样**送进模型，所以加规矩就直接写一行，不想要的整行删掉。
+          下面这些是预设，不是你只能用的东西。
         </div>
+        <button class="mini-btn" id="cfgDeaiReset" style="margin-top:10px">恢复预设</button>
       </div>
 
       <div class="sec-title">设定</div>
@@ -151,6 +169,12 @@ const App = (() => {
       const tempRange = g('#cfgTemp');
       const tempLabel = tempRange.previousElementSibling;
       tempRange.oninput = () => { tempLabel.textContent = '温度 ' + Number(tempRange.value).toFixed(1); };
+
+      const rst = g('#cfgDeaiReset');
+      if (rst) rst.onclick = () => {
+        g('#cfgDeaiRules').value = AI.DEAI_RULES;
+        toast('已恢复成预设，记得点保存');
+      };
 
       g('#cfgSave').onclick = () => {
         const cm = r.querySelector('input[name="cmode"]:checked');
@@ -768,7 +792,9 @@ const App = (() => {
 
   return {
     boot, go, toast, sheet, closeSheet, renderAll,
-    openModelSettings, openBookSettings, openDataSettings, openImportPreview,
+    openSettings, openModelSettings, openBookSettings, openNewBook,
+    openDataSettings, openImportPreview, openIgnored, openViewAction, exportText,
+    sheetError: () => lastSheetError,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),
   };
 })();

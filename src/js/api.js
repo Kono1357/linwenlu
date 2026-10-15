@@ -145,8 +145,7 @@ const AI = (() => {
       '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
       '需要有新角色出场时，先从人物表里挑最合适的那个，表里确实没有才新建，',
       '并且同一个角色前后的称呼必须保持一致，不要用"某个人""一个男人"这类泛称代替已有角色。',
-      (st.config.deai === false) ? '' : DEAI_RULES,
-      st.config.deaiRules ? String(st.config.deaiRules).trim() : '',
+      (st.config.deai === false) ? '' : deaiBlock(),
       lenRule,
       modeRule,
     ].filter(Boolean).join('\n');
@@ -167,7 +166,7 @@ const AI = (() => {
 
   /* ── 去 AI 味铁律：默认注入每次生成 ── */
   const DEAI_RULES = [
-    '【写作铁律 · 去 AI 味】逐条遵守：',
+    '【写作铁律】逐条遵守：',
     '· 禁用「不是……而是……」句式（机器最深的肌肉记忆，用来制造假深度）',
     '· 禁用「综上所述 / 值得注意的是 / 本质上 / 事实上 / 总的来说」这类学术腔',
     '· 禁用「首先 / 其次 / 此外」的三段论；段落靠意思自然衔接，不用过渡词硬连',
@@ -179,6 +178,13 @@ const AI = (() => {
     '· 对话像真人说话：允许省略句、语气词、打断；长短句交错，不要一人一句轮着来',
     '· 每个角色要有辨识度：遮住名字也能看出是谁在说话',
   ].join('\n');
+
+  /** 作者改过就用作者的，没改过用这套预设 */
+  function deaiBlock() {
+    const cfg = Store.get().config;
+    if (cfg.deai === false) return '';
+    return String(cfg.deaiRules || '').trim() || DEAI_RULES;
+  }
 
   /* ── 针对检测结果做一次「去 AI 味」重写 ── */
   function buildDeaiMessages(text, hits) {

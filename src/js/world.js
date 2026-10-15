@@ -324,5 +324,5 @@ const WorldView = (() => {
     render();
   }
 
-  return { init, render, setPick, fill, fillMissing };
+  return { init, render, setPick, fill, fillMissing, editSetting };
 })();

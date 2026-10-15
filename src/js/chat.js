@@ -811,6 +811,6 @@ const ChatView = (() => {
   return {
     init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
     toggleFind, openContext, openSegments, setReplyTo, setBaseText, clearReplyTo,
-    absorbNames,
+    absorbNames, openCommit, openFlavor,
   };
 })();

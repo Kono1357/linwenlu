@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 02:21 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 02:29 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -545,7 +545,11 @@ button { cursor: pointer; }
   border-bottom: 1px solid var(--line);
 }
 .sheet__head h3 { margin: 0; font-size: 15px; font-weight: 650; }
-.sheet__body { flex: 1; overflow-y: auto; padding: 18px 18px calc(24px + var(--safe-b)); }
+.sheet__body {
+  flex: 1 1 auto; min-height: 0;      /* min-height:0 是 flex 子项能滚的前提 */
+  overflow-y: auto;
+  padding: 18px 18px calc(24px + var(--safe-b));
+}
 
 .field { margin-bottom: 16px; }
 .field__label { display: block; font-size: 11.5px; color: var(--ink-3); margin-bottom: 7px; letter-spacing: .04em; font-weight: 550; }
@@ -822,6 +826,9 @@ input[type="number"] { font-family: var(--mono); }
 }
 .buildstamp .mini-btn { font-family: var(--ui); }
 
+/* 面板里没能绑上事件的按钮：标出来，别让人怀疑整个应用坏了 */
+.is-broken { opacity: .4; text-decoration: line-through; }
+
 /* ─────────── Toast ─────────── */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
@@ -834,13 +841,26 @@ input[type="number"] { font-family: var(--mono); }
   max-width: calc(100vw - 40px); text-align: center;
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+/* 抽屉开着时，提示改从顶部出现 —— 否则它会正好压住抽屉底部的按钮 */
+body.is-sheet .toast {
+  bottom: auto; top: calc(var(--safe-t) + 14px);
+  animation: none;
+}
 
 /* ─────────── 禁掉一切横向滑动 ───────────
    手机上任何需要"左右拉"才能看全的操作条，都算功能不可用。
-   所以：整页不横滚，操作条一律换行，而不是 overflow-x: auto。 */
-html, body { overflow-x: hidden; max-width: 100vw; }
+   所以：整页不横滚，操作条一律换行，而不是 overflow-x: auto。
+
+   这里用 clip 而不是 hidden —— hidden 会把 html 变成一个滚动容器，
+   在真实手机上会连带影响纵向滚动，表现就是"页面滑不动"。 */
+html, body { overflow-x: clip; max-width: 100%; }
 .stage, .view, .pane--body, .pane--list, .chat__flow, .world__body, .reader {
   max-width: 100%;
+}
+/* 各处滚动容器：iOS 惯性滚动 + 不让滚动穿透到下层 */
+.chapter-list, .reader, .chat__flow, .world__body, .sheet__body, .tidyview, .quotebox {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 /* ─────────── 桌面端 ─────────── */
@@ -894,7 +914,7 @@ html, body { overflow-x: hidden; max-width: 100vw; }
   .selbar { max-width: calc(100% - 16px); }
 }
 </style>
-<meta name="build" content="2026-10-16 02:21">
+<meta name="build" content="2026-10-16 02:29">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -2054,8 +2074,7 @@ const AI = (() => {
       '出场人物必须使用【人物表】里已有的名字，并按表里的性格与关系来写；',
       '需要有新角色出场时，先从人物表里挑最合适的那个，表里确实没有才新建，',
       '并且同一个角色前后的称呼必须保持一致，不要用"某个人""一个男人"这类泛称代替已有角色。',
-      (st.config.deai === false) ? '' : DEAI_RULES,
-      st.config.deaiRules ? String(st.config.deaiRules).trim() : '',
+      (st.config.deai === false) ? '' : deaiBlock(),
       lenRule,
       modeRule,
     ].filter(Boolean).join('\n');
@@ -2076,7 +2095,7 @@ const AI = (() => {
 
   /* ── 去 AI 味铁律：默认注入每次生成 ── */
   const DEAI_RULES = [
-    '【写作铁律 · 去 AI 味】逐条遵守：',
+    '【写作铁律】逐条遵守：',
     '· 禁用「不是……而是……」句式（机器最深的肌肉记忆，用来制造假深度）',
     '· 禁用「综上所述 / 值得注意的是 / 本质上 / 事实上 / 总的来说」这类学术腔',
     '· 禁用「首先 / 其次 / 此外」的三段论；段落靠意思自然衔接，不用过渡词硬连',
@@ -2088,6 +2107,13 @@ const AI = (() => {
     '· 对话像真人说话：允许省略句、语气词、打断；长短句交错，不要一人一句轮着来',
     '· 每个角色要有辨识度：遮住名字也能看出是谁在说话',
   ].join('\n');
+
+  /** 作者改过就用作者的，没改过用这套预设 */
+  function deaiBlock() {
+    const cfg = Store.get().config;
+    if (cfg.deai === false) return '';
+    return String(cfg.deaiRules || '').trim() || DEAI_RULES;
+  }
 
   /* ── 针对检测结果做一次「去 AI 味」重写 ── */
   function buildDeaiMessages(text, hits) {
@@ -3787,7 +3813,7 @@ const ChatView = (() => {
   return {
     init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
     toggleFind, openContext, openSegments, setReplyTo, setBaseText, clearReplyTo,
-    absorbNames,
+    absorbNames, openCommit, openFlavor,
   };
 })();
 
@@ -4118,7 +4144,7 @@ const WorldView = (() => {
     render();
   }
 
-  return { init, render, setPick, fill, fillMissing };
+  return { init, render, setPick, fill, fillMissing, editSetting };
 })();
 
 /* ─── js/app.js ─── */
@@ -4130,7 +4156,7 @@ const WorldView = (() => {
 const App = (() => {
   let el = {};
   let cur = 'read';
-  let sheetOnMount = null;
+  let lastSheetError = null;
 
   const esc = (s) => String(s || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -4157,18 +4183,36 @@ const App = (() => {
     toastTimer = setTimeout(() => { el.toast.hidden = true; }, ms);
   }
 
-  /* ── 抽屉 ── */
+  /* ── 抽屉 ──
+     这里必须给 onMount 兜一层：绑定代码里任何一个 querySelector 落空，
+     后面所有按钮就全都绑不上 —— 面板显示正常、点哪儿都没反应，
+     表现就是"退不出来"。宁可少几个次级按钮，也不能整片失灵。 */
   function sheet(title, html, onMount) {
     el.sheetTitle.textContent = title;
     el.sheetBody.innerHTML = html;
     el.sheet.hidden = false;
-    sheetOnMount = onMount;
-    if (onMount) onMount(el.sheetBody);
+    document.body.classList.add('is-sheet');
+    lastSheetError = null;
+    if (onMount) {
+      try {
+        onMount(el.sheetBody);
+      } catch (e) {
+        lastSheetError = { title: title, error: String((e && e.message) || e) };
+        console.error('[面板] 「' + title + '」绑定出错：', e);
+        // 兜底：至少保证关得掉
+        const x = el.sheet.querySelector('.sheet__head [data-close]');
+        if (x) x.onclick = () => closeSheet();
+        // 把失败的按钮标出来，用户至少知道哪块坏了，而不是怀疑整个应用
+        el.sheetBody.querySelectorAll('button[id]').forEach((b) => {
+          if (typeof b.onclick !== 'function' && !b.dataset.close) b.classList.add('is-broken');
+        });
+      }
+    }
   }
   function closeSheet() {
     el.sheet.hidden = true;
     el.sheetBody.innerHTML = '';
-    sheetOnMount = null;
+    document.body.classList.remove('is-sheet');
   }
 
   /* ── 设置：模型 ── */
@@ -4197,22 +4241,22 @@ const App = (() => {
         </div>
       </div>
       <div class="field">
-        <label class="field__label">文风约束</label>
+        <label class="field__label">文风约束（可以随便改）</label>
         <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
       </div>
-      <div class="sec-title">去 AI 味</div>
+      <div class="sec-title">写作铁律</div>
       <label class="pickrow">
         <input type="checkbox" id="cfgDeai" ${c.deai === false ? '' : 'checked'}>
-        <span class="pickrow__k">每次生成都注入「去 AI 味铁律」</span>
+        <span class="pickrow__k">每次生成都注入下面的铁律</span>
       </label>
       <div class="field">
-        <label class="field__label">自己再补几条禁令（可选）</label>
-        <textarea class="textarea" id="cfgDeaiRules" style="min-height:80px"
-          placeholder="一行一条，例如：&#10;不许用「值得注意」&#10;对话不许超过三句连着说">${esc(c.deaiRules || '')}</textarea>
+        <label class="field__label">内容可以随便改、删、加</label>
+        <textarea class="textarea" id="cfgDeaiRules" style="min-height:230px">${esc(c.deaiRules || AI.DEAI_RULES)}</textarea>
         <div class="field__hint">
-          内置的铁律见下方；你补的会拼在后面。<br>
-          <span style="opacity:.75">禁用「不是…而是…」／学术腔／三段论／「当…时」／给语气打标签／无中生有内心戏；明喻全篇≤2 次；克制「认真、光芒、摩挲、挑眉、微微」等词；对话要像真人、角色要有辨识度。</span>
+          这一整块会**原样**送进模型，所以加规矩就直接写一行，不想要的整行删掉。
+          下面这些是预设，不是你只能用的东西。
         </div>
+        <button class="mini-btn" id="cfgDeaiReset" style="margin-top:10px">恢复预设</button>
       </div>
 
       <div class="sec-title">设定</div>
@@ -4275,6 +4319,12 @@ const App = (() => {
       const tempRange = g('#cfgTemp');
       const tempLabel = tempRange.previousElementSibling;
       tempRange.oninput = () => { tempLabel.textContent = '温度 ' + Number(tempRange.value).toFixed(1); };
+
+      const rst = g('#cfgDeaiReset');
+      if (rst) rst.onclick = () => {
+        g('#cfgDeaiRules').value = AI.DEAI_RULES;
+        toast('已恢复成预设，记得点保存');
+      };
 
       g('#cfgSave').onclick = () => {
         const cm = r.querySelector('input[name="cmode"]:checked');
@@ -4892,7 +4942,9 @@ const App = (() => {
 
   return {
     boot, go, toast, sheet, closeSheet, renderAll,
-    openModelSettings, openBookSettings, openDataSettings, openImportPreview,
+    openSettings, openModelSettings, openBookSettings, openNewBook,
+    openDataSettings, openImportPreview, openIgnored, openViewAction, exportText,
+    sheetError: () => lastSheetError,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),
   };
 })();

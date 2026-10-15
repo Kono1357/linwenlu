@@ -841,6 +841,108 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
+    // ㉝ 穷举所有面板：能不能开、能不能滚、能不能关、绑定有没有失败
+    // "无法退出""无法滑动"这类问题只有逐个开一遍才查得出来。
+    await cdp.eval(`(function(){
+      var t = Store.chapter.active() || Store.chapter.add({});
+      Store.chapter.setActive(t.id);
+      Store.chat.clear();
+      Store.chat.push('ai', '探针用的一段内容，用来让段落面板有东西可列。', { chapterId: t.id });
+      Store.chat.push('ai', '第二段内容，同样只是占位。', { chapterId: t.id });
+      Store.setting.add({ kind: '人物', name: '探针人物', desc: '' });
+    })()`);
+    await sleep(150);
+
+    const panelList = [
+      ['设置总览', `App.openSettings()`],
+      ['模型与外观', `App.openModelSettings()`],
+      ['作品', `App.openBookSettings()`],
+      ['新开一本', `App.openNewBook()`],
+      ['数据与备份', `App.openDataSettings()`],
+      ['忽略名单', `App.openIgnored()`],
+      ['剧情菜单', `App.go('read'); App.openViewAction()`],
+      ['对话菜单', `App.go('chat'); App.openViewAction()`],
+      ['世界线菜单', `App.go('world'); App.openViewAction()`],
+      ['本章版本', `App.go('read'); ReadView.openVersions()`],
+      ['改写正文', `App.go('read'); ReadView.openEditor()`],
+      ['整理本章', `App.go('read'); ReadView.openTidy()`],
+      ['本章段落', `App.go('chat'); ChatView.openSegments()`],
+      ['写入剧情', `App.go('chat'); (function(){var m=Store.chat.all().filter(function(x){return x.role==='ai';})[0]; ChatView.openCommit(m);})()`],
+      ['本次上下文', `App.go('chat'); ChatView.openContext()`],
+      ['编辑设定', `App.go('world'); WorldView.editSetting(Store.setting.all()[0].id)`],
+      ['AI味体检', `App.go('chat'); (function(){var m=Store.chat.all().filter(function(x){return x.role==='ai';})[0]; ChatView.openFlavor(m.id);})()`],
+    ];
+
+    const panelReport = [];
+    let bindFails = 0;
+    for (const [name, openExpr] of panelList) {
+      let opened = false, geo = null, closed = false, err = '', broken = 0;
+      try {
+        await cdp.eval(`(function(){ ${openExpr}; })()`);
+        await sleep(380);                       // 等出场动画跑完，否则量到的是中途位置
+        opened = await cdp.eval(`!document.getElementById('sheet').hidden`);
+        if (opened) {
+          geo = await cdp.eval(`(function(){
+            var b = document.getElementById('sheetBody');
+            var p = document.querySelector('.sheet__panel');
+            var pr = p.getBoundingClientRect();
+            return {
+              能滚: b.scrollHeight > b.clientHeight + 2,
+              需要滚: b.scrollHeight > b.clientHeight + 2,
+              面板出界: pr.top < -1 || pr.bottom > window.innerHeight + 1
+            };
+          })()`);
+          const se = await cdp.eval(`App.sheetError() && App.sheetError().title === ${JSON.stringify(name)} ? App.sheetError() : null`);
+          if (se) { bindFails++; err = '绑定失败: ' + se.error.slice(0, 70); }
+          broken = await cdp.eval(`document.querySelectorAll('#sheetBody .is-broken').length`);
+          // 走用户会走的路：点 ✕
+          await cdp.eval(`document.getElementById('sheet').querySelector('.sheet__head [data-close]').click()`);
+          await sleep(180);
+          closed = await cdp.eval(`document.getElementById('sheet').hidden`);
+        }
+      } catch (e) { err = String(e && e.message || e).slice(0, 80); }
+      panelReport.push({
+        面板: name, 打开: opened, 能滚: geo ? geo.能滚 : null,
+        出界: geo ? geo.面板出界 : null, 失效按钮: broken || 0,
+        能关: closed, 问题: err || undefined,
+      });
+    }
+    await cdp.eval(`App.go('read')`);
+    report.steps.push({ step: 'panels', check: { 绑定失败数: bindFails, 明细: panelReport } });
+
+    // ㉞ 写作铁律是可编辑的预设，不是写死的
+    report.steps.push({
+      step: 'rules', check: await cdp.eval(`(function(){
+      try {
+        App.openModelSettings();
+        var ta = document.getElementById('cfgDeaiRules');
+        var preset = ta ? ta.value : '';
+        var lines = preset.split('\\n').filter(function(l){ return l.trim(); }).length;
+        // 作者改一行 → 保存 → 生成时必须用改过的
+        ta.value = preset + '\\n· 我自己加的一条';
+        document.getElementById('cfgSave').click();
+        var sys = AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content;
+        var usedMine = /我自己加的一条/.test(sys);
+        // 恢复预设
+        App.openModelSettings();
+        document.getElementById('cfgDeaiReset').click();
+        var back = document.getElementById('cfgDeaiRules').value;
+        document.getElementById('sheet').querySelector('.sheet__head [data-close]').click();
+        // 关掉总开关后必须完全不注入
+        Store.config.set({ deai: false });
+        var sys2 = AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content;
+        var off = !/写作铁律/.test(sys2);
+        Store.config.set({ deai: true, deaiRules: '' });
+        return {
+          预设行数: lines,
+          预设是完整铁律: /不是……而是……/.test(preset),
+          改了就生效: usedMine,
+          能一键恢复: back.indexOf('我自己加的一条') < 0 && back.length > 80,
+          关掉后不注入: off
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {
