@@ -21,15 +21,21 @@ const Store = (() => {
   const num = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
   const arr = (v) => (Array.isArray(v) ? v : []);
 
+  /* ── 预设（不是规定，作者随时可以改回来） ── */
+  const DEFAULT_STYLE = '冷峻、白描、少形容词；对话不解释情绪；每段一到三句。';
+  const DEFAULT_TEMP = 0.9;
+  const DEFAULT_FREQ = 0.4;
+  const DEFAULT_PRES = 0.2;
+
   function blankConfig() {
     return {
       apiBase: 'https://api.deepseek.com/v1',
       apiKey: '',
       model: 'deepseek-chat',
-      temperature: 0.9,
-      freqPenalty: 0.4,    // 用词重复惩罚：正值让模型少用已经用过的词（治"雷同"最直接）
-      presPenalty: 0.2,    // 话题新鲜度：正值鼓励说新的东西，而不是绕回旧内容
-      style: '冷峻、白描、少形容词；对话不解释情绪；每段一到三句。',
+      temperature: DEFAULT_TEMP,
+      freqPenalty: DEFAULT_FREQ,    // 用词重复惩罚：正值让模型少用已经用过的词（治"雷同"最直接）
+      presPenalty: DEFAULT_PRES,    // 话题新鲜度：正值鼓励说新的东西，而不是绕回旧内容
+      style: DEFAULT_STYLE,
       ctxSettings: 12,
       ctxPrev: 1,
       ctxTail: 1200,
@@ -600,6 +606,7 @@ const Store = (() => {
     load, save, on, get, uid,
     books, chapter, setting, line, chat, config,
     exportJSON, parseArchive, importJSON, reset, isPersistFailed,
+    DEFAULT_STYLE, DEFAULT_TEMP, DEFAULT_FREQ, DEFAULT_PRES,
     get activeChapterId() { return book().__activeChapter || null; },
     get lastOpened() { return book().__lastOpened || null; },
   };

@@ -936,55 +936,74 @@ class CDP {
     await cdp.eval(`App.go('read')`);
     report.steps.push({ step: 'panels', check: { 绑定失败数: bindFails, 明细: panelReport } });
 
-    // ㉞ 写作铁律：从 ⚙ 进来第一眼就能看到、能改
+    // ㉞ 写作设定：文风与铁律都是可恢复的预设，作者能直接看见默认
     report.steps.push({
       step: 'rules', check: await cdp.eval(`(function(){
       try {
-        // 1) 设置总览里有没有这个一级入口
+        // 1) 设置总览里有没有一级入口
         App.openSettings();
         var entry = document.getElementById('mRules');
         var entryVisible = !!(entry && entry.getClientRects().length);
         var entryText = entry ? entry.textContent.replace(/\\s+/g, '') : '';
         entry.click();
-        // 2) 是否直接落到编辑页
-        var ta = document.getElementById('rlText');
-        var landed = !!ta;
-        var preset = ta ? ta.value : '';
-        var lines = preset.split('\\n').filter(function(l){ return l.trim(); }).length;
+        // 2) 文风和铁律在同一页
+        var landed = !!document.getElementById('rlText') && !!document.getElementById('rlStyle');
 
-        // 3) 改一行 → 保存 → 生成时必须用改过的
+        // 3) 文风：改了 → 保存 → 再用「改回预设」恢复
+        var st = document.getElementById('rlStyle');
+        var defStyle = Store.DEFAULT_STYLE;
+        var presetVisible = st.placeholder === defStyle;
+        st.value = '随便改一段试试';
+        document.getElementById('rlSave').click();
+        var styleSaved = Store.get().config.style;
+
+        App.openRules();
+        var hasStyleReset = !!document.getElementById('rlStyleReset');
+        var hasStyleCopy = !!document.getElementById('rlStyleCopy');
+        document.getElementById('rlStyleReset').click();
+        var styleBack = document.getElementById('rlStyle').value;
+
+        // 4) 铁律：改了 → 生效 → 恢复
+        var ta = document.getElementById('rlText');
+        var preset = ta.value;
+        var lines = preset.split('\\n').filter(function (l) { return l.trim(); }).length;
         ta.value = preset + '\\n· 我自己加的一条';
         document.getElementById('rlSave').click();
-        var savedCfg = Store.get().config.deaiRules || '';
         var sys = AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content;
-
-        // 4) 恢复预设
         App.openRules();
         document.getElementById('rlReset').click();
         var back = document.getElementById('rlText').value;
         App.closeSheet();
 
-        // 5) 关掉总开关后完全不注入
+        // 5) 总开关关掉后完全不注入
         Store.config.set({ deai: false });
-        var sys2 = AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content;
-        var off = !/写作铁律/.test(sys2);
+        var off = !/写作铁律/.test(AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content);
 
-        // 6) 模型设置页不该再有第二份编辑框（避免两处都能改）
+        // 6) 采样参数能一键回到默认
+        Store.config.set({ deai: true, deaiRules: '', style: defStyle });
         App.openModelSettings();
-        var dup = !!document.getElementById('cfgDeaiRules');
+        var pr = document.getElementById('cfgParamReset');
+        document.getElementById('cfgTemp').value = 1.5;
+        document.getElementById('cfgFreq').value = 1.4;
+        pr.click();
+        var gotT = document.getElementById('cfgTemp').value;
+        var gotF = document.getElementById('cfgFreq').value;
         App.closeSheet();
 
-        Store.config.set({ deai: true, deaiRules: '' });
         return {
           一级入口可见: entryVisible,
-          入口文字: entryText.slice(0, 40),
-          点开直接到编辑页: landed,
-          预设行数: lines,
-          预设是完整铁律: /不是……而是……/.test(preset),
-          改了就生效: /我自己加的一条/.test(sys),
-          能一键恢复: back.indexOf('我自己加的一条') < 0 && back.length > 80,
+          入口文字: entryText.slice(0, 28),
+          文风铁律同页: landed,
+          文风能改: styleSaved === '随便改一段试试',
+          文风有改回预设: hasStyleReset,
+          文风有复制预设: hasStyleCopy,
+          预设直接可见: presetVisible,
+          文风真恢复了: styleBack === defStyle,
+          铁律条数: lines,
+          铁律改了就生效: /我自己加的一条/.test(sys),
+          铁律能恢复: back.indexOf('我自己加的一条') < 0 && back.length > 80,
           关掉后不注入: off,
-          模型页没有重复入口: !dup
+          参数能回默认: Number(gotT) === Store.DEFAULT_TEMP && Number(gotF) === Store.DEFAULT_FREQ
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });

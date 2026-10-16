@@ -104,14 +104,14 @@ const App = (() => {
         <input type="range" id="cfgPres" min="0" max="1.5" step="0.1" value="${Number(c.presPenalty || 0)}" style="width:100%">
         <div class="field__hint">调高 → 更愿意写新东西，而不是绕回刚写过的内容。</div>
       </div>
-      <div class="field">
-        <label class="field__label">文风约束（可以随便改）</label>
-        <textarea class="textarea" id="cfgStyle" style="min-height:70px">${esc(c.style)}</textarea>
-      </div>
-      <div class="sec-title">写作铁律</div>
+      <button class="mini-btn" id="cfgParamReset" style="width:100%;justify-content:center;margin-top:6px">
+        上面三项调回默认（${Store.DEFAULT_TEMP} / ${Store.DEFAULT_FREQ} / ${Store.DEFAULT_PRES}）
+      </button>
+
+      <div class="sec-title">写作设定</div>
       <button class="navrow" id="cfgRulesGo">
-        <span class="navrow__k">去改写作铁律</span>
-        <span class="navrow__v">${Store.get().config.deai === false ? '已关闭' : '单独一页'}</span>
+        <span class="navrow__k">文风 + 写作铁律</span>
+        <span class="navrow__v">${Store.get().config.deai === false ? '铁律已关' : '可改 · 可恢复预设'}</span>
         <span class="navrow__a">›</span>
       </button>
 
@@ -190,6 +190,17 @@ const App = (() => {
       const goRules = g('#cfgRulesGo');
       if (goRules) goRules.onclick = () => { closeSheet(); openRules(); };
 
+      const pr = g('#cfgParamReset');
+      if (pr) pr.onclick = () => {
+        tempRange.value = Store.DEFAULT_TEMP;
+        tempLabel.textContent = '温度 ' + Store.DEFAULT_TEMP.toFixed(1);
+        freqRange.value = Store.DEFAULT_FREQ;
+        freqLabel.textContent = '用词重复惩罚 ' + Store.DEFAULT_FREQ.toFixed(1);
+        presRange.value = Store.DEFAULT_PRES;
+        presLabel.textContent = '话题新鲜度 ' + Store.DEFAULT_PRES.toFixed(1);
+        toast('已调回默认，记得点保存');
+      };
+
       g('#cfgSave').onclick = () => {
         const cm = r.querySelector('input[name="cmode"]:checked');
         const th = r.querySelector('input[name="theme"]:checked');
@@ -200,7 +211,7 @@ const App = (() => {
           temperature: Number(tempRange.value),
           freqPenalty: Number(g('#cfgFreq').value) || 0,
           presPenalty: Number(g('#cfgPres').value) || 0,
-          style: g('#cfgStyle').value.trim(),
+          style: Store.get().config.style,     // 文风在「写作设定」那一页改，别在这里覆盖
           ctxSettings: Number(g('#cfgSet').value) || 0,
           ctxTail: Number(g('#cfgTail').value) || 0,
           commitMode: cm ? cm.value : 'ask',
@@ -523,11 +534,11 @@ const App = (() => {
     const ready = Store.config.ready();
     const cfg = Store.get().config;
     const ruleState = cfg.deai === false ? '已关闭'
-      : (String(cfg.deaiRules || '').trim() ? '已自定义' : '预设 11 条');
+      : (String(cfg.deaiRules || '').trim() ? '已自定义' : `预设 ${AI.DEAI_RULES.split('\n').filter((x) => x.trim()).length} 条`);
     sheet('设置', `
       <button class="navrow" id="mRules">
-        <span class="navrow__k">写作铁律</span>
-        <span class="navrow__v">${ruleState} · 点开就能改</span>
+        <span class="navrow__k">写作设定</span>
+        <span class="navrow__v">文风 + 铁律 · ${ruleState}</span>
         <span class="navrow__a">›</span>
       </button>
       <button class="navrow" id="mModel">
@@ -559,43 +570,78 @@ const App = (() => {
     });
   }
 
-  /* ── 写作铁律：单独一个面板 ──
-     之前它埋在「模型设置」里，那个面板有 1900px 高，手机上要滚很久才看得到，
-     等于没有。现在从 ⚙ 进来第一眼就是它。 */
+  /* ── 写作设定：文风 + 铁律 ──
+     两块都是预设，各有一键恢复和"复制预设" —— 这样作者能直接看见默认长什么样，
+     而不是改完就再也找不回来。 */
   function openRules() {
     const cfg = Store.get().config;
-    sheet('写作铁律', `
-      <div class="field__hint" style="margin-bottom:16px">
-        这里写的东西会<b>原样</b>跟着每次生成送进模型。<br>
-        下面这段是<b>预设</b>，不是规定 —— 改、删、加都随你。
+    const styleNow = String(cfg.style || '');
+    const rulesNow = String(cfg.deaiRules || '');
+    const styleIsDefault = styleNow.trim() === Store.DEFAULT_STYLE;
+    const rulesIsDefault = rulesNow.trim() === AI.DEAI_RULES.trim();
+
+    sheet('写作设定', `
+      <div class="field__hint" style="margin-bottom:4px">
+        下面两块都是<b>预设</b>，不是规定 —— 改、删、加都随你，改坏了随时能恢复。
       </div>
+
+      <div class="sec-title">文风</div>
+      <div class="field">
+        <textarea class="textarea" id="rlStyle" style="min-height:88px"
+          placeholder="${esc(Store.DEFAULT_STYLE)}">${esc(styleNow)}</textarea>
+        <div class="field__hint">一句话说清这本书该怎么写，每次生成都会带上。</div>
+        <div class="kv" style="border:none;padding:8px 0 0;gap:6px">
+          <button class="mini-btn" id="rlStyleReset" ${styleIsDefault ? 'disabled style="opacity:.45"' : ''}>
+            ${styleIsDefault ? '当前就是预设' : '改回预设'}
+          </button>
+          <button class="mini-btn" id="rlStyleCopy">复制预设</button>
+        </div>
+      </div>
+
+      <div class="sec-title">写作铁律</div>
       <label class="pickrow">
         <input type="checkbox" id="rlOn" ${cfg.deai === false ? '' : 'checked'}>
         <span class="pickrow__k">启用（关掉就完全不注入）</span>
       </label>
-      <div class="field" style="margin-top:14px">
-        <label class="field__label">内容（一行一条）</label>
-        <textarea class="textarea" id="rlText" style="min-height:320px">${esc(cfg.deaiRules || AI.DEAI_RULES)}</textarea>
+      <div class="field" style="margin-top:12px">
+        <textarea class="textarea" id="rlText" style="min-height:330px">${esc(rulesNow || AI.DEAI_RULES)}</textarea>
+        <div class="field__hint">
+          一行一条，原样送进模型。不想要的整行删掉，想加的直接另起一行写。<br>
+          <span style="opacity:.75">共 ${AI.DEAI_RULES.split('\n').filter((x) => x.trim()).length} 条预设。</span>
+        </div>
+        <div class="kv" style="border:none;padding:8px 0 0;gap:6px">
+          <button class="mini-btn" id="rlReset" ${rulesIsDefault ? 'disabled style="opacity:.45"' : ''}>
+            ${rulesIsDefault ? '当前就是预设' : '改回预设'}
+          </button>
+          <button class="mini-btn" id="rlCopy">复制预设</button>
+        </div>
       </div>
-      <button class="btn" id="rlSave">保存</button>
-      <button class="btn btn--ghost" id="rlReset" style="margin-top:8px">恢复成预设</button>
-      <div class="field__hint" style="margin-top:12px">
-        例：想加一条「对话不许超过三句连着说」，直接在末尾另起一行写就行。
-        哪条不要，把那一行删掉。
-      </div>
+
+      <button class="btn" id="rlSave" style="margin-top:18px">保存</button>
     `, (r) => {
-      const ta = r.querySelector('#rlText');
+      const styleTA = r.querySelector('#rlStyle');
+      const rulesTA = r.querySelector('#rlText');
       const on = r.querySelector('#rlOn');
+      const copy = (txt, okMsg) => {
+        if (navigator.clipboard) navigator.clipboard.writeText(txt).then(
+          () => toast(okMsg), () => toast('复制失败，请手动选中'));
+        else toast('这台设备不支持自动复制');
+      };
+
+      r.querySelector('#rlStyleReset').onclick = () => { styleTA.value = Store.DEFAULT_STYLE; toast('文风已改回预设'); };
+      r.querySelector('#rlStyleCopy').onclick = () => copy(Store.DEFAULT_STYLE, '预设文风已复制');
+      r.querySelector('#rlReset').onclick = () => { rulesTA.value = AI.DEAI_RULES; on.checked = true; toast('铁律已改回预设'); };
+      r.querySelector('#rlCopy').onclick = () => copy(AI.DEAI_RULES, '预设铁律已复制');
+
       r.querySelector('#rlSave').onclick = () => {
-        Store.config.set({ deai: on.checked, deaiRules: ta.value.trim() });
+        Store.config.set({
+          style: styleTA.value.trim(),
+          deai: on.checked,
+          deaiRules: rulesTA.value.trim(),
+        });
         closeSheet();
         ChatView.hint();
         toast('已保存');
-      };
-      r.querySelector('#rlReset').onclick = () => {
-        ta.value = AI.DEAI_RULES;
-        on.checked = true;
-        toast('已恢复成预设，记得点保存');
       };
     });
   }
