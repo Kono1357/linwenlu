@@ -182,7 +182,7 @@ const App = (() => {
       </label>
       <button class="btn" id="cfgSave" style="margin-top:20px">保存</button>
       <button class="btn btn--ghost" id="cfgTest" style="margin-top:8px">连通性测试</button>
-      <div class="field__hint" id="cfgOut" style="margin-top:10px">${ready ? '已配置' : '还没填 Key'}</div>
+      <div class="field__hint" id="cfgOut" style="margin-top:10px">${Store.config.ready() ? '已配置' : '还没填 Key'}</div>
     `, (r) => {
       const g = (id) => r.querySelector(id);
 
