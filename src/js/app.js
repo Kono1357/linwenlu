@@ -65,24 +65,44 @@ const App = (() => {
     document.body.classList.remove('is-sheet');
   }
 
-  /* ── 设置：模型 ── */
+  /* ── 设置：模型 ──
+     每个厂家的地址、协议、模型名都不一样，所以先选厂家，再把地址和模型带出来。
+     选"自定义"就完全自己填 —— 预设只是省事，不是限制。 */
   function openModelSettings() {
     const c = Store.get().config;
-    const ready = Store.config.ready();
+    const providers = AI.PROVIDERS;
+    const cur = providers.find((p) => p.id === c.provider) || providers[providers.length - 1];
+    const modelList = cur.models || [];
+
     sheet('模型设置', `
       <div class="field">
-        <label class="field__label">接口地址（OpenAI 兼容）</label>
-        <input class="input" id="cfgBase" value="${esc(c.apiBase)}" placeholder="https://api.deepseek.com/v1">
-        <div class="field__hint">尾部可带或不带 <code>/chat/completions</code>，会自动补全。</div>
+        <label class="field__label">用哪一家</label>
+        <select class="select" id="cfgProvider">
+          ${providers.map((p) => `<option value="${p.id}" ${p.id === cur.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+        </select>
+        <div class="field__hint" id="cfgProvNote">${esc(cur.note || '')}</div>
       </div>
+
       <div class="field">
-        <label class="field__label">API Key</label>
-        <input class="input" id="cfgKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-…">
+        <label class="field__label">模型</label>
+        <input class="input" id="cfgModel" value="${esc(c.model)}" placeholder="${esc(modelList[0] || '模型名')}">
+        <div class="chips" id="cfgModelList" style="padding-top:9px"></div>
+        <div class="field__hint" id="cfgModelHint">点上面任何一个直接换上，也可以自己敲。</div>
+      </div>
+
+      <div class="field">
+        <label class="field__label">接口地址</label>
+        <input class="input" id="cfgBase" value="${esc(c.apiBase)}" placeholder="${esc(cur.base || 'https://…')}">
+        <div class="field__hint">
+          尾部带不带 <code>/chat/completions</code> 都行，会自动补。<br>
+          协议：<b id="cfgTypeName">${c.apiType === 'anthropic' ? 'Claude 原生（/messages）' : 'OpenAI 兼容（/chat/completions）'}</b>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field__label">API Key ${cur.noKey ? '（这家不用填）' : ''}</label>
+        <input class="input" id="cfgKey" type="password" value="${esc(c.apiKey)}" placeholder="${cur.noKey ? '不需要' : 'sk-…'}">
         <div class="field__hint">只存在这台设备的浏览器里，不会上传到别处。</div>
-      </div>
-      <div class="field">
-        <label class="field__label">模型名</label>
-        <input class="input" id="cfgModel" value="${esc(c.model)}" placeholder="deepseek-chat">
       </div>
       <div class="row">
         <div class="field">
@@ -116,16 +136,9 @@ const App = (() => {
       </button>
 
       <div class="sec-title">设定</div>
-      <label class="pickrow">
-        <input type="checkbox" id="cfgAutoSet" ${c.autoSetting === false ? '' : 'checked'}>
-        <span class="pickrow__k">后台自动收录设定并写完整说明</span>
-      </label>
       <div class="field__hint">
-        写到新的人物/地点时自动入库并把说明写全，过程不打扰你 —— 写完自己去设定页看就行。<br>
-        人物 → 外貌、脾气、口癖、和主角的关系<br>
-        地点 → 位置环境、不同时段的样子、气氛<br>
-        物件 → 外形材质、来历、作用<br>
-        规则 → 内容、适用范围、限制、代价
+        设定集只由你自己维护：在「世界线」页手动添加、编辑、删除。<br>
+        写正文时系统<b>不会</b>自动收录角色、也不会自动写说明。
       </div>
 
       <div class="sec-title">外观</div>
@@ -172,11 +185,49 @@ const App = (() => {
       <div class="field__hint" id="cfgOut" style="margin-top:10px">${ready ? '已配置' : '还没填 Key'}</div>
     `, (r) => {
       const g = (id) => r.querySelector(id);
+
+      /* 厂家 → 自动带出地址、协议、模型 */
+      const provSel = g('#cfgProvider');
+      const baseInput = g('#cfgBase');
+      const modelInput = g('#cfgModel');
+      const noteBox = g('#cfgProvNote');
+      const modelHint = g('#cfgModelHint');
+      const modelChips = g('#cfgModelList');
+      const typeName = g('#cfgTypeName');
+      const keyInput = g('#cfgKey');
+
+      function fillProvider(p, replaceValues) {
+        if (!p) return;
+        noteBox.textContent = p.note || '';
+        if (replaceValues) {
+          if (p.id !== 'custom') baseInput.value = p.base || '';
+          if (p.models && p.models.length) modelInput.value = p.models[0];
+        }
+        modelInput.placeholder = (p.models && p.models[0]) || '模型名';
+        typeName.textContent = p.type === 'anthropic'
+          ? 'Claude 原生（/messages）' : 'OpenAI 兼容（/chat/completions）';
+        keyInput.placeholder = p.noKey ? '不需要' : 'sk-…';
+        const list = p.models || [];
+        modelChips.innerHTML = list
+          .map((m) => `<button type="button" class="chip-btn" data-m="${esc(m)}">${esc(m)}</button>`).join('');
+        modelChips.querySelectorAll('[data-m]').forEach((b) => {
+          if (b.dataset.m === modelInput.value) b.classList.add('is-on');
+          b.onclick = () => {
+            modelInput.value = b.dataset.m;
+            modelChips.querySelectorAll('[data-m]').forEach((x) => x.classList.toggle('is-on', x === b));
+          };
+        });
+        modelHint.textContent = list.length
+          ? '点上面任何一个直接换上，也可以自己敲。'
+          : '这家没有预设模型，直接填你要用的名字。';
+      }
+
+      fillProvider(AI.PROVIDERS.find((x) => x.id === provSel.value), false);
+      provSel.onchange = () => fillProvider(AI.PROVIDERS.find((x) => x.id === provSel.value), true);
       const tempRange = g('#cfgTemp');
       const tempLabel = tempRange.previousElementSibling;
       tempRange.oninput = () => { tempLabel.textContent = '温度 ' + Number(tempRange.value).toFixed(1); };
-      const freqRange = g('#cfgFreq');
-      const freqLabel = freqRange.previousElementSibling;
+      const freqRange = g('#cfgFreq');      const freqLabel = freqRange.previousElementSibling;
       freqRange.oninput = () => { freqLabel.textContent = '用词重复惩罚 ' + Number(freqRange.value).toFixed(1); };
       const presRange = g('#cfgPres');
       const presLabel = presRange.previousElementSibling;
@@ -204,10 +255,14 @@ const App = (() => {
       g('#cfgSave').onclick = () => {
         const cm = r.querySelector('input[name="cmode"]:checked');
         const th = r.querySelector('input[name="theme"]:checked');
+        const prov = AI.PROVIDERS.find((x) => x.id === g('#cfgProvider').value)
+          || AI.PROVIDERS[AI.PROVIDERS.length - 1];
         Store.config.set({
-          apiBase: g('#cfgBase').value.trim() || 'https://api.deepseek.com/v1',
+          apiType: prov.type,                                  // 协议跟着厂家走
+          provider: prov.id,
+          apiBase: g('#cfgBase').value.trim() || prov.base,
           apiKey: g('#cfgKey').value.trim(),
-          model: g('#cfgModel').value.trim() || 'deepseek-chat',
+          model: g('#cfgModel').value.trim() || (prov.models[0] || ''),
           temperature: Number(tempRange.value),
           freqPenalty: Number(g('#cfgFreq').value) || 0,
           presPenalty: Number(g('#cfgPres').value) || 0,
@@ -217,12 +272,12 @@ const App = (() => {
           commitMode: cm ? cm.value : 'ask',
           targetWords: Number(g('#cfgWords').value) || 0,
           theme: th ? th.value : 'light',
-          deai: Store.get().config.deai,          // 这两项在「写作铁律」那一页改，别在这里覆盖
+          deai: Store.get().config.deai,          // 这两项在「写作设定」那一页改，别在这里覆盖
           deaiRules: Store.get().config.deaiRules,
-          autoSetting: g('#cfgAutoSet') ? g('#cfgAutoSet').checked : true,
         });
         applyTheme();
-        closeSheet(); ChatView.hint(); toast('已保存');
+        closeSheet(); ChatView.hint(); renderTop();
+        toast(`已保存 · ${prov.name} / ${Store.get().config.model}`, 2600);
       };
       g('#cfgTest').onclick = async () => {
         g('#cfgSave').click();
@@ -736,34 +791,20 @@ const App = (() => {
     // world
     sheet('世界线与设定 · 菜单', `
       <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
-      <button class="navrow" id="vaIgnored"><span class="navrow__k">忽略名单</span><span class="navrow__v">${Store.setting.ignoredNames().length} 个名字不再收</span><span class="navrow__a">›</span></button>
       <div class="sec-title">存档</div>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
       <div class="sec-title">清理</div>
-      <button class="navrow" id="vaCleanAuto">
-        <span class="navrow__k">删掉自动收录的</span>
-        <span class="navrow__v">你自己加的会留下</span>
-      </button>
       <button class="navrow navrow--danger" id="vaCleanAll">
         <span class="navrow__k">清空全部设定</span>
         <span class="navrow__v">世界线不受影响</span>
       </button>
       <div class="field__hint" style="margin-top:14px">
-        写到有戏份的新角色时，系统会把它收进设定，并**只把正文里已经写到的**信息摘出来
-        —— 正文没写的不许编。不想要这个行为，可以在设置里关掉。
+        设定集只由你自己维护 —— 写正文时系统不会自动收录角色，也不会自动写说明。
       </div>
       ${globalRows()}
     `, (r) => {
-      r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
-      r.querySelector('#vaCleanAuto').onclick = () => {
-        const n = Store.setting.all().filter((s) => s.auto).length;
-        if (!n) return toast('没有自动收录的条目');
-        if (!confirm(`删掉 ${n} 条自动收录的设定？你自己加的会留下。`)) return;
-        const gone = Store.setting.clearAuto();
-        closeSheet(); renderAll(); toast(`已删掉 ${gone} 条`);
-      };
       r.querySelector('#vaCleanAll').onclick = () => {
         const n = Store.setting.all().length;
         if (!n) return toast('设定是空的');
@@ -779,32 +820,6 @@ const App = (() => {
       };
       r.querySelector('#vaWorldImp').onclick = () => { closeSheet(); openDataSettings('import'); };
       bindGlobal(r);
-    });
-  }
-
-  /* ── 忽略名单：被拒绝过的名字，可以放出来重新问 ── */
-  function openIgnored() {
-    const list = Store.setting.ignoredNames();
-    sheet('忽略名单', `
-      <div class="field__hint" style="margin-bottom:12px">
-        这些名字你选过「不用」，系统不会再拿它们问你。放出来之后会重新参与识别。
-      </div>
-      ${list.length ? list.map((n) => `
-        <div class="kv">
-          <span class="kv__k">${esc(n)}</span>
-          <button class="mini-btn" data-un="${esc(n)}">放出来</button>
-        </div>`).join('') : '<div class="field__hint">名单是空的。</div>'}
-      ${list.length > 1 ? '<button class="btn btn--ghost" id="igClear" style="margin-top:16px">全部放出来</button>' : ''}
-    `, (r) => {
-      r.querySelectorAll('[data-un]').forEach((b) => b.onclick = () => {
-        Store.setting.unignore(b.dataset.un);
-        closeSheet(); openIgnored();
-      });
-      const c = r.querySelector('#igClear');
-      if (c) c.onclick = () => {
-        [...list].forEach((n) => Store.setting.unignore(n));
-        closeSheet(); openIgnored();
-      };
     });
   }
 
@@ -928,7 +943,7 @@ const App = (() => {
   return {
     boot, go, toast, sheet, closeSheet, renderAll,
     openSettings, openRules, openModelSettings, openBookSettings, openNewBook,
-    openDataSettings, openImportPreview, openIgnored, openViewAction, exportText,
+    openDataSettings, openImportPreview, openViewAction, exportText,
     sheetError: () => lastSheetError,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),
   };

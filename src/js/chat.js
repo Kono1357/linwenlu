@@ -519,15 +519,6 @@ const ChatView = (() => {
         Store.chat.markClipped(m.id);
         Store.chat.attach(m.id, ch.id);   // 落盘后才算真属于这一章
 
-        // 顺带把「已经在库里的角色」的新原句补成佐证，设定会自己长厚
-        const known = Store.setting.all();
-        const q = AI.quotesFor(m.text, known.map((s) => s.name));
-        let added = 0;
-        Object.keys(q).forEach((name) => {
-          const s = known.find((x) => x.name === name);
-          if (s) { Store.setting.addQuotes(s.id, q[name]); added++; }
-        });
-
         App.closeSheet(); renderFlow();
         if (ReadView) ReadView.refresh();
 
@@ -535,11 +526,8 @@ const ChatView = (() => {
           Store.config.set({ commitMode: 'auto' });
           App.toast('已设置：以后直接续接到末尾');
         } else {
-          App.toast(`已写进 ${ch.title}${added ? ` · 顺带补了 ${added} 条设定佐证` : ''}`, 2400);
+          App.toast(`已写进 ${ch.title}`, 2400);
         }
-
-        // 静默吸收新名字并补全设定 —— 作者不需要知道这个过程
-        absorbNames(m.text);
       };
 
       r.querySelectorAll('.cm-opt').forEach((b) => b.onclick = () => doCommit(b.dataset.k));
@@ -557,40 +545,7 @@ const ChatView = (() => {
     Store.chat.attach(m.id, ch.id);
     if (ReadView) ReadView.refresh();
     App.toast('已自动写进 ' + ch.title + '（可在设置里关掉）', 2400);
-    absorbNames(m.text);
   }
-
-  /* ── 新名字：静默收录 ──
-     作者要的是"先立住人、再写剧情"，所以入库与补全都不打扰他。
-     但**只收有戏份的**：露一面的路人、一次性的地名不收 —— 收进来也是垃圾。
-     补全用的依据只有正文原句，模型只做摘录，正文没写的不许编。 */
-  function absorbNames(text) {
-    if (Store.get().config.autoSetting === false) return;
-    let names = [];
-    try { names = AI.findNewNames(text); } catch (_) { return; }
-    if (!names.length) return;
-
-    // 至少出现 3 次才算"这个角色有戏"，一次两次的是路人
-    const main = names.filter((x) => x.n >= 3);
-    if (!main.length) return;
-
-    const PLACE = /(村|镇|城|街|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|路|道|谷|原|岛|洲|关|驿|站)$/;
-    const ids = main.slice(0, 2).map((x) => Store.setting.add({   // 一次最多两条，省 token
-      kind: PLACE.test(x.name) ? '地点' : '人物',
-      name: x.name,
-      desc: '',
-      quotes: x.quotes || [],
-      auto: true,
-    }).id);
-
-    if (typeof WorldView !== 'undefined' && WorldView) {
-      (async () => {
-        for (const id of ids) await WorldView.fill(id);
-        WorldView.render();
-      })();
-    }
-  }
-
 
   /* ── 重新生成：同样的要求，换一种写法 ──
      光"再跑一次"没用 —— 上下文一模一样，模型会吐回几乎相同的文本，
@@ -911,6 +866,6 @@ const ChatView = (() => {
   return {
     init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
     toggleFind, openContext, openSegments, setReplyTo, setBaseText, clearReplyTo,
-    absorbNames, openCommit, openFlavor,
+    openCommit, openFlavor,
   };
 })();

@@ -738,22 +738,6 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
-    // ㉙ 忽略名单：拒绝过的名字不再问
-    report.steps.push({
-      step: 'ignored', check: await cdp.eval(`(function(){
-      try {
-        var t = '沈砚推开门。周砚白抬头看了他一眼。沈砚没说话。周砚白也没说话。沈砚走了。';
-        var before = AI.findNewNames(t).map(function(x){ return x.name; });
-        before.forEach(function(n){ Store.setting.ignoreName(n); });
-        var after = AI.findNewNames(t).map(function(x){ return x.name; });
-        return {
-          第一次会问: before.join('、'),
-          忽略后不再问: after.length === 0,
-          名单里有: Store.setting.ignoredNames().length
-        };
-      } catch (e) { return { error: String(e && e.message || e) }; }
-    })()`) });
-
     // ㉚ AI 味检测：机器痕迹要抓得住，正常人话别误伤
     report.steps.push({
       step: 'aiflavor', check: await cdp.eval(`(function(){
@@ -779,54 +763,6 @@ class CDP {
           干净文本_误报数: c.hits.length,
           铁律进了提示词: /不是……而是……/.test(sys),
           消息上有标记: !!document.querySelector('[data-flavor]') || '（当前没有生成内容，跳过）'
-        };
-      } catch (e) { return { error: String(e && e.message || e) }; }
-    })()`) });
-
-    // ㉛ 设定收录：只收有戏份的，露一面的路人不收
-    report.steps.push({
-      step: 'autoset', check: await cdp.eval(`(function(){
-      try {
-        Store.setting.all().slice().forEach(function(s){ Store.setting.remove(s.id); });
-        // 有戏份的主要角色：各出现 3 次以上
-        ChatView.absorbNames('陆沉推开门。白露抬头看了他一眼。陆沉没说话。白露也没说话。陆沉走了。白露站着没动。');
-        var main = Store.setting.all().map(function(s){ return s.name + '[' + s.kind + ']'; });
-
-        // 路过的：只出现一两次，不该收
-        Store.setting.all().slice().forEach(function(s){ Store.setting.remove(s.id); });
-        ChatView.absorbNames('沈砚推开门。周砚白抬头看了他一眼。沈砚没说话。');
-        var passerby = Store.setting.all().length;
-
-        // 地名：够戏份才收，且按后缀认类别
-        Store.setting.all().slice().forEach(function(s){ Store.setting.remove(s.id); });
-        ChatView.absorbNames('青石巷那边起了雾。青石巷很静。青石巷没有人。陆沉走进青石巷。陆沉停下。青石巷尽头有灯。');
-        var place = Store.setting.all().map(function(s){ return s.name + '[' + s.kind + ']'; });
-
-        return {
-          有戏份的收进来: main.join('、'),
-          露一面的不收: passerby === 0,
-          地名认得对: place.join('、') || '（没收）',
-          没弹窗: document.getElementById('sheet').hidden
-        };
-      } catch (e) { return { error: String(e && e.message || e) }; }
-    })()`) });
-
-    // ㉛ᐟ 摘录模式：正文没写的，一个字都不许多
-    report.steps.push({
-      step: 'extractonly', check: await cdp.eval(`(function(){
-      try {
-        var s = { kind: '人物', name: '陆沉', quotes: ['陆沉推开门，他个子很高，进门时低了下头。', '「来晚了。」陆沉说。'] };
-        var msgs = AI.buildEnrichMessages(s);
-        var sys = msgs[0].content, user = msgs[1].content;
-        var both = sys + user;
-        return {
-          禁止编造: /严禁编造/.test(sys),
-          没写的要省略: /整行省略|没写到的项/.test(sys),
-          不许猜: /不许用「可能」/.test(sys),
-          依据只有正文: /唯一依据/.test(user),
-          正文片段带上了: /个子很高/.test(user),
-          没有常理补足: !/常理/.test(both),
-          没有写完整: !/写完整|补完整/.test(both)
         };
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
@@ -1097,6 +1033,54 @@ class CDP {
         c.温度也带上 = !!(got && got.temperature > 0);
         c.铁律进了提示词 = !!((AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content || '').indexOf('不许重复自己') >= 0);
         return c;
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㊳ 厂家与协议：不同厂家的地址/协议/模型名都不一样，装配必须分得清
+    report.steps.push({
+      step: 'providers', check: await cdp.eval(`(function(){
+      try {
+        var list = AI.PROVIDERS;
+        var out = {
+          厂家数: list.length,
+          有Claude原生: list.some(function(p){ return p.id === 'anthropic' && p.type === 'anthropic'; }),
+          有本地Ollama: list.some(function(p){ return p.id === 'ollama' && p.noKey; }),
+          有自定义: list.some(function(p){ return p.id === 'custom'; }),
+          非自定义的都配了地址和模型: list.filter(function(p){ return p.id !== 'custom'; })
+            .every(function(p){ return !!p.base && p.models.length > 0; }),
+          地址都是https或本地: list.filter(function(p){ return p.id !== 'custom'; })
+            .every(function(p){ return /^https:\\/\\//.test(p.base) || /^http:\\/\\/localhost/.test(p.base); })
+        };
+
+        // OpenAI 兼容装配
+        var oc = AI.buildRequest(
+          { apiType: 'openai', apiBase: 'https://api.deepseek.com/v1', apiKey: 'k', model: 'deepseek-chat',
+            temperature: 0.9, freqPenalty: 0.4, presPenalty: 0.2 },
+          [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]);
+        out.openai地址 = oc.url;
+        out.openai用Bearer = oc.headers.Authorization === 'Bearer k';
+        out.openai系统消息在数组里 = oc.body.messages[0].role === 'system';
+        out.openai带重复惩罚 = oc.body.frequency_penalty === 0.4;
+
+        // Claude 原生装配
+        var ac = AI.buildRequest(
+          { apiType: 'anthropic', apiBase: 'https://api.anthropic.com/v1', apiKey: 'k',
+            model: 'claude-sonnet-4-5-20250929', temperature: 1.4, maxTokens: 4096 },
+          [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]);
+        out.claude地址 = ac.url;
+        out.claude用xApiKey = ac.headers['x-api-key'] === 'k' && !ac.headers.Authorization;
+        out.claude有版本头 = !!ac.headers['anthropic-version'];
+        out.claude允许浏览器直连 = ac.headers['anthropic-dangerous-direct-browser-access'] === 'true';
+        out.claude系统提取到顶层 = ac.body.system === 's'
+          && !ac.body.messages.some(function(m){ return m.role === 'system'; });
+        out.claude带maxTokens = ac.body.max_tokens === 4096;
+        out.claude温度夹到1 = ac.body.temperature === 1;
+
+        // 流解析：两种协议的事件形状不同
+        out.解析OpenAI = AI.pickDelta('openai', { choices: [{ delta: { content: '甲' } }] }) === '甲';
+        out.解析Claude = AI.pickDelta('anthropic', { type: 'content_block_delta', delta: { text: '乙' } }) === '乙';
+        out.claude忽略无关事件 = AI.pickDelta('anthropic', { type: 'message_start' }) === '';
+        return out;
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 

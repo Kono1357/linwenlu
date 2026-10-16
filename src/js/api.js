@@ -3,6 +3,86 @@
    ① 上下文装配（按预算挑料，可预览）② 流式调用 ③ 失败降级到「可复制提示词」
    ════════════════════════════════════════════ */
 
+/* ════════════════════════════════════════════
+   临文录 · 模型接入
+   参考原作者的做法：把「接口协议 / 地址 / 模型 / 密钥」拆成四个独立字段，
+   而不是写死一家。协议只有两种，但覆盖了绝大多数服务：
+     openai    —— /chat/completions，OpenAI 兼容（DeepSeek、Kimi、GLM、通义、方舟、硅基流动、Ollama…）
+     anthropic —— /messages，Claude 原生协议（头、system、流格式都不一样）
+   ════════════════════════════════════════════ */
+
+/** 厂家预设：选一个就把地址和常用模型带出来，也可以完全自己填 */
+const Providers = [
+  {
+    id: 'deepseek', name: 'DeepSeek 深度求索', type: 'openai',
+    base: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+    note: '国内直连、便宜，默认选它',
+  },
+  {
+    id: 'moonshot', name: '月之暗面 Kimi', type: 'openai',
+    base: 'https://api.moonshot.cn/v1',
+    models: ['kimi-k2-0905-preview', 'moonshot-v1-128k', 'moonshot-v1-32k', 'moonshot-v1-8k'],
+    note: '长上下文见长',
+  },
+  {
+    id: 'zhipu', name: '智谱 GLM', type: 'openai',
+    base: 'https://open.bigmodel.cn/api/paas/v4',
+    models: ['glm-4-plus', 'glm-4-air', 'glm-4-flash'],
+    note: 'glm-4-flash 有免费额度',
+  },
+  {
+    id: 'qwen', name: '阿里通义千问', type: 'openai',
+    base: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen3-max'],
+    note: '长文本处理稳',
+  },
+  {
+    id: 'ark', name: '火山方舟 豆包', type: 'openai',
+    base: 'https://ark.cn-beijing.volces.com/api/v3',
+    models: ['doubao-pro-32k', 'doubao-1-5-pro-32k-250115'],
+    note: '模型名要填接入点 ID，形如 ep-xxxx',
+  },
+  {
+    id: 'silicon', name: '硅基流动 SiliconFlow', type: 'openai',
+    base: 'https://api.siliconflow.cn/v1',
+    models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-R1'],
+    note: '一个 Key 调很多开源模型',
+  },
+  {
+    id: 'modelscope', name: '魔搭 ModelScope', type: 'openai',
+    base: 'https://api-inference.modelscope.cn/v1',
+    models: ['Qwen/Qwen3-235B-A22B-Instruct-2507', 'deepseek-ai/DeepSeek-V3.1'],
+    note: '作者自己用的就是这个',
+  },
+  {
+    id: 'openai', name: 'OpenAI', type: 'openai',
+    base: 'https://api.openai.com/v1',
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini'],
+    note: '需要能连上',
+  },
+  {
+    id: 'anthropic', name: 'Anthropic Claude', type: 'anthropic',
+    base: 'https://api.anthropic.com/v1',
+    models: ['claude-sonnet-4-5-20250929', 'claude-opus-4-1-20250805', 'claude-3-5-haiku-20241022'],
+    note: '原生协议（不是 OpenAI 兼容），系统会走 /messages',
+  },
+  {
+    id: 'gemini', name: 'Google Gemini', type: 'openai',
+    base: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+    note: '用的是它的 OpenAI 兼容口',
+  },
+  {
+    id: 'ollama', name: '本地 Ollama', type: 'openai',
+    base: 'http://localhost:11434/v1',
+    models: ['qwen2.5:14b', 'llama3.1:8b', 'gemma2:9b'],
+    note: '不用 Key，但得先在本机跑起来',
+    noKey: true,
+  },
+  { id: 'custom', name: '自定义 / 其他中转', type: 'openai', base: '', models: [], note: '地址和模型自己填' },
+];
+
 const AI = (() => {
   const cut = (s, n) => {
     s = String(s || '');
@@ -247,52 +327,6 @@ const AI = (() => {
     ];
   }
 
-  /* ── 设定补全：**记录，不是创作** ──
-     上一版这里写的是"原文没写就以常理补足"，结果模型开始自由发挥，
-     给角色乱加外貌、乱编关系 —— 既不像话又白烧 token。
-     现在只有一个动作：把正文里已经写到的信息摘出来。正文没写的，一个字都不加。 */
-  const KIND_GUIDE = {
-    人物: ['容貌', '身材', '性格', '说话习惯', '和别人的关系'],
-    地点: ['位置与环境', '不同时段的样子', '气氛'],
-    物件: ['外形与材质', '来历', '作用'],
-    规则: ['内容', '适用范围', '限制', '代价'],
-    设定: ['是什么', '怎么运作', '对故事的影响'],
-  };
-
-  function buildEnrichMessages(setting, opts = {}) {
-    const kind = setting.kind || '人物';
-    const dims = KIND_GUIDE[kind] || KIND_GUIDE.人物;
-    const bk = Store.books.current();
-    const seen = (setting.quotes || []).filter(Boolean).slice(0, 6);
-
-    const sys = [
-      '你是小说设定**记录员**，不是作者。',
-      '',
-      '**唯一任务：把正文里已经写到的信息摘出来，整理成条目。**',
-      '· 只写下面【正文片段】里明确出现过的内容',
-      '· **没写到的项，整行省略**（不要写"未提及""暂无"，不要推测，不要补全）',
-      '· 严禁编造：外貌、身材、经历、关系、性格，正文没写就一律不写',
-      '· 不许用「可能」「似乎」「大概」「应该是」这类猜测口气',
-      '· 每项一行，格式「· 项目：内容」，一句话说完，不要展开',
-      '· 不要标题、不要解释、不要分点套分点、不要 markdown 标记',
-      '',
-      '如果正文里关于这个条目几乎什么都没写，就**只输出一行或直接输出「（正文暂无）」**。宁可少写，不许编。',
-    ].join('\n');
-
-    const user = [
-      `【作品】《${bk.title}》${bk.genre ? ' · ' + bk.genre : ''}`,
-      `【条目】${setting.name}（${kind}）`,
-      `需要留意的项：${dims.join(' / ')}（正文写了哪项就记哪项）`,
-      seen.length
-        ? `【正文片段（这是唯一依据）】\n${seen.map((q) => '· ' + q).join('\n')}`
-        : '【正文片段】（空）',
-      '',
-      '请只根据上面的片段，摘出这个条目的信息。',
-    ].join('\n\n');
-
-    return [{ role: 'system', content: sys }, { role: 'user', content: user }];
-  }
-
   /* ── 只生成提示词（降级用） ── */
   function buildPromptOnly(opts) {
     return buildMessages(opts).map((m) => {
@@ -301,36 +335,85 @@ const AI = (() => {
     }).join('\n\n');
   }
 
+  /* ── 请求装配：两种协议的差异全部收在这里 ──
+     加一家新厂家只要往 Providers 里加一条，不用碰下面的代码。 */
+  function buildRequest(cfg, messages, opts = {}) {
+    const type = cfg.apiType || 'openai';
+    const base = String(cfg.apiBase || '').replace(/\/+$/, '');
+    const temp = Number.isFinite(+opts.temperature) ? +opts.temperature : (Number(cfg.temperature) || 0.9);
+
+    if (type === 'anthropic') {
+      // Claude 原生协议：system 是顶层字段、头用 x-api-key、必须给 max_tokens
+      const sys = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+      const rest = messages.filter((m) => m.role !== 'system').map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      }));
+      return {
+        url: /\/messages$/.test(base) ? base : base + '/messages',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': cfg.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',   // 不加这个浏览器会被 CORS 拦掉
+        },
+        body: {
+          model: cfg.model,
+          system: sys,
+          messages: rest,
+          max_tokens: Number(cfg.maxTokens) || 4096,
+          temperature: Math.min(temp, 1),    // Claude 的温度上限是 1
+          stream: true,
+        },
+      };
+    }
+
+    // OpenAI 兼容（绝大多数厂家走这条）
+    const body = { model: cfg.model, messages, stream: true, temperature: temp };
+    // 采样层面的防重复：光靠提示词压不住"每次都差不多"，这两个参数直接改概率分布
+    if (Number.isFinite(+cfg.freqPenalty) && +cfg.freqPenalty !== 0) body.frequency_penalty = +cfg.freqPenalty;
+    if (Number.isFinite(+cfg.presPenalty) && +cfg.presPenalty !== 0) body.presence_penalty = +cfg.presPenalty;
+    return {
+      url: /\/chat\/completions$/.test(base) ? base : base + '/chat/completions',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+      body,
+    };
+  }
+
+  /** 从一条 SSE 里取出这段新增的文字（两种协议的事件形状不一样） */
+  function pickDelta(type, j) {
+    if (type === 'anthropic') {
+      if (j.type === 'content_block_delta' && j.delta) return j.delta.text || '';
+      return '';
+    }
+    const d = j.choices && j.choices[0] && j.choices[0].delta;
+    return (d && (d.content ?? d.reasoning_content)) || '';
+  }
+
   /* ── 流式调用 ── */
   async function generate(opts) {
     const { onDelta, signal } = opts;
     const st = Store.get();
     const cfg = st.config;
-    if (!cfg.apiKey) throw new Error('还没填 API Key —— 点右上「⋯ → 模型设置」');
+    const type = cfg.apiType || 'openai';
+    if (!cfg.apiKey && type !== 'ollama') {
+      throw new Error('还没填 API Key —— 点右上「⋯ → 模型设置」');
+    }
+    if (!cfg.model) throw new Error('还没选模型 —— 点右上「⋯ → 模型设置」');
 
-    const base = String(cfg.apiBase || '').replace(/\/+$/, '');
-    const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
-    const body = {
-      model: cfg.model,
-      messages: opts.messages || buildMessages(opts),
-      stream: true,
-      temperature: Number.isFinite(+opts.temperature) ? +opts.temperature : (Number(cfg.temperature) || 0.9),
-    };
-    // 采样层面的防重复：光靠提示词压不住"每次都差不多"，这两个参数直接改概率分布
-    if (Number.isFinite(+cfg.freqPenalty) && +cfg.freqPenalty !== 0) body.frequency_penalty = +cfg.freqPenalty;
-    if (Number.isFinite(+cfg.presPenalty) && +cfg.presPenalty !== 0) body.presence_penalty = +cfg.presPenalty;
+    const req = buildRequest(cfg, opts.messages || buildMessages(opts), opts);
 
     let res;
     try {
-      res = await fetch(url, {
+      res = await fetch(req.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
-        body: JSON.stringify(body),
+        headers: req.headers,
+        body: JSON.stringify(req.body),
         signal,
       });
     } catch (e) {
       const err = new Error('连接失败：' + (e && e.message || e) +
-        '\n可能是浏览器跨域限制或网络问题。可点「复制提示词」拿到完整请求，粘贴到任意 AI 里。');
+        '\n\n可能是：① 地址填错 ② 浏览器跨域被拦 ③ 网络不通。\n可以点「复制提示词」，把请求粘到任意 AI 里先写着。');
       err.code = 'NETWORK';
       throw err;
     }
@@ -338,14 +421,21 @@ const AI = (() => {
     if (!res.ok) {
       let detail = '';
       try { detail = (await res.text()).slice(0, 400); } catch (_) { }
-      const e = new Error(`接口返回 ${res.status}${res.statusText ? ' ' + res.statusText : ''}\n${detail}`);
+      let hint = '';
+      if (res.status === 401 || res.status === 403) hint = '\n→ 多半是 Key 不对，或者 Key 跟这个厂家不匹配。';
+      else if (res.status === 404) hint = '\n→ 地址或模型名不对。检查一下厂家的 Base URL 和模型名。';
+      else if (res.status === 400) hint = '\n→ 请求被拒：常见是模型名错，或者这个厂家不支持某些参数（试试把「重复惩罚」「新鲜度」调成 0）。';
+      else if (res.status === 429) hint = '\n→ 触发限流或余额不足。';
+      const e = new Error(`接口返回 ${res.status}${res.statusText ? ' ' + res.statusText : ''}${hint}\n${detail}`);
       e.code = 'HTTP';
       throw e;
     }
 
     if (!res.body) {  // 某些环境不支持流
       const j = await res.json();
-      const txt = j?.choices?.[0]?.message?.content || '';
+      const txt = type === 'anthropic'
+        ? ((j.content || [])[0] || {}).text || ''
+        : (j.choices?.[0]?.message?.content || '');
       onDelta && onDelta(txt);
       return txt;
     }
@@ -369,8 +459,7 @@ const AI = (() => {
         if (payload === '[DONE]') continue;
         try {
           const j = JSON.parse(payload);
-          const d = j.choices?.[0]?.delta;
-          const piece = (d && (d.content ?? d.reasoning_content)) || '';
+          const piece = pickDelta(type, j);
           if (piece) { full += piece; onDelta && onDelta(piece); }
         } catch (_) { /* 忽略半截 JSON */ }
       }
@@ -382,14 +471,19 @@ const AI = (() => {
   async function probe() {
     const st = Store.get();
     const cfg = st.config;
-    if (!cfg.apiKey) return { ok: false, reason: '未填 API Key' };
-    const base = String(cfg.apiBase || '').replace(/\/+$/, '');
-    const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
+    const type = cfg.apiType || 'openai';
+    if (!cfg.apiKey && type !== 'ollama') return { ok: false, reason: '未填 API Key' };
+    if (!cfg.model) return { ok: false, reason: '未填模型名' };
+
+    const req = buildRequest(cfg, [{ role: 'user', content: 'ping' }], { temperature: 0 });
+    req.body.stream = false;
+    if (type === 'anthropic') req.body.max_tokens = 8;
+    else req.body.max_tokens = 8;
     try {
-      const res = await fetch(url, {
+      const res = await fetch(req.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
-        body: JSON.stringify({ model: cfg.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 4, stream: false }),
+        headers: req.headers,
+        body: JSON.stringify(req.body),
       });
       if (!res.ok) return { ok: false, reason: `HTTP ${res.status}：${(await res.text()).slice(0, 200)}` };
       return { ok: true };
@@ -398,152 +492,10 @@ const AI = (() => {
     }
   }
 
-  /* ── 从正文里认名字：给「新角色入库」用 ──
-     中文人名没有形态标记，只能靠字头 + 上下文。策略是宁可漏、不可错：
-     ① 只认百家姓与「老/小/阿」这类称呼头；② 必须出现在词首（前面是标点或开头）；
-     ③ 末字不能是虚词动词（否则「老陈把」会被人当成名字）；④ 全文出现 ≥2 次才算候选。
-     结果只是「建议」，要用户勾选后才入库 —— 不自动写。 */
-  const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫'
-    + '经房裘缪干解应宗丁宣贲邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀羊於惠甄麹家封芮羿储靳汲邴糜松'
-    + '井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄'
-    + '印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍郤璩桑桂濮牛寿通'
-    + '边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东'
-    + '欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾毋沙乜养鞠须丰巢关蒯相查后红游竺权逯盖益桓公'
-    + '老小阿大';   // 最后四个是称呼头：老陈、小李、阿棠、大刘
-  const STOPCHAR = new Set(('把被让给和跟向从又也都没很才就还只像似乎便即这里那着你我他她它们的是了在有不之与其并且但因为所以如果虽然'
-    + '说道问答笑走来去站坐看想听见叫喊吃喝拉睡望盯摇点抓拿放推拉踢打').split(''));
-  const STOP = new Set(['黄金', '白天', '马上', '高大', '温柔', '江南', '风景', '行李', '手掌', '树木', '花样', '毛病', '程度', '程序', '的确', '仿佛', '石头', '安静', '常常', '通常', '平静', '外面', '上面', '下面', '里面', '前面', '后面', '旁边', '周围', '对方', '结果', '原因', '情况', '时候', '地方', '东西', '事情', '样子', '心里', '眼神', '声音', '问题', '办法', '世界', '人生', '男人', '女人', '孩子', '老人', '学生', '老师', '医生', '警察', '老板', '经理', '司机', '服务',
-    '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数',
-    '文明', '文章', '文化', '天气', '风度', '风格', '风景', '风里', '高处', '高兴', '高手', '高处', '市场', '市里', '安全', '面子', '个子', '影子', '影子', '日子', '样子', '曲子', '嗓子',
-    '于是', '终于', '关于', '由于', '对于', '至于', '甚至', '尤其', '曾经', '已经', '立刻', '马上', '忽然', '突然', '果然', '竟然', '居然', '虽然', '固然',
-    '马路', '马上', '道路', '路口', '门口', '巷口', '街口', '出口', '入口', '窗口', '港口', '借口', '伤口', '开口',
-    '白天', '白天', '白色', '白菜', '白发', '白酒', '明白', '坦白', '空白',
-    '空气', '空白', '抽空', '天空', '星空', '太空', '高空',
-    '黄金', '黄土', '黄昏', '黄河', '黄河', '黄沙',
-    '林子', '林里', '林中', '森林', '树林',
-    '沈默', '沉着', '沉着']);
-
-  /** 名字附近出现这些字，才像是在写"人" */
-  const HUMAN_CTX = /[说道问答喊叫哭笑走来去站坐看想听望盯点摇抬低转沉默咬回身手动]/;
-
-  /** 两个名字是不是同一个人的不同叫法（老陈 / 陈） */
-  function similarName(a, b) {
-    const x = String(a || '').trim(), y = String(b || '').trim();
-    if (!x || !y) return false;
-    if (x === y) return true;
-    if (x.length >= 2 && y.length >= 2 && Math.abs(x.length - y.length) <= 1) {
-      return x.includes(y) || y.includes(x);
-    }
-    return false;
-  }
-
-  /**
-   * 从正文里认名字，并带回「证据句」——
-   * 只有名字没用，设定要能长出内容，所以把这个人出现过的原句一起带出来。
-   * 返回 [{ name, n, quotes:[原句…] }]
-   */
-  function extractNames(text, known) {
-    const src = String(text || '');
-    if (src.length < 12) return [];
-    const knownSet = new Set(known || []);
-    const count = new Map();
-    const quotes = new Map();
-    const human = new Map();     // 「像人」的证据数，用来滤掉"高大""安静"这类词
-
-    const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
-
-    for (const sent of sentences) {
-      const seenHere = new Set();
-      for (let i = 0; i < sent.length; i++) {
-        if (SURNAMES.indexOf(sent[i]) < 0) continue;
-        if (i > 0 && /[\u4e00-\u9fa5]/.test(sent[i - 1])) continue;
-
-        let name = null;
-        for (const len of [3, 2]) {          // 先试三字，末字是虚词就退回两字
-          const cand = sent.slice(i, i + len);
-          if (cand.length < len) continue;
-          if (!/^[\u4e00-\u9fa5]+$/.test(cand)) continue;
-          if (STOPCHAR.has(cand[cand.length - 1])) continue;
-          name = cand;
-          break;
-        }
-        if (!name || STOP.has(name) || knownSet.has(name)) continue;
-
-        if (!seenHere.has(name)) {
-          seenHere.add(name);
-          count.set(name, (count.get(name) || 0) + 1);
-
-          const around = sent.slice(Math.max(0, i - 2), i + name.length + 4);
-          const after = sent.slice(i + name.length, i + name.length + 1);
-          if (HUMAN_CTX.test(around)) human.set(name, (human.get(name) || 0) + 1);
-          if (/^[「『"]/.test(after)) human.set(name, (human.get(name) || 0) + 1);
-
-          const arr = quotes.get(name) || [];
-          if (arr.length < 3 && !arr.includes(sent)) arr.push(sent);
-          quotes.set(name, arr);
-        }
-        i += name.length - 1;
-      }
-    }
-
-    // ── 地名：不走姓氏那条路，靠后缀认 ──
-    // 「青石巷」「东堤码头」这种根本没有姓氏，用姓氏表永远匹配不到。
-    const PLACE_TAILS = '村|镇|城|街|巷子|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|大道|路|谷|原|岛|洲|关|驿|站|园|苑|坊|湾|岭|峰|溪|滩|坪|坡';
-    const placeRe = new RegExp(`([\\u4e00-\\u9fa5]{1,3})(${PLACE_TAILS})`, 'g');
-    let pm;
-    while ((pm = placeRe.exec(src)) !== null) {
-      const name = pm[1] + pm[2];
-      if (name.length < 2 || name.length > 5) continue;
-      if (STOP.has(name) || knownSet.has(name)) continue;
-      count.set(name, (count.get(name) || 0) + 1);
-      human.set(name, (human.get(name) || 0) + 1);      // 有地名后缀本身就够
-      if (!quotes.has(name)) {
-        const at = src.lastIndexOf('。', pm.index);
-        const head = at >= 0 ? at + 1 : Math.max(0, pm.index - 12);
-        const end = src.indexOf('。', pm.index + name.length);
-        const sent = src.slice(head, end === -1 ? pm.index + name.length + 8 : end + 1).trim();
-        if (sent) quotes.set(name, [sent]);
-      }
-    }
-
-    return [...count.entries()]
-      .filter(([name, n]) => n >= 2 && (human.get(name) || 0) >= 1)   // 出现过两次以上，且至少有"像人"的上下文
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, n]) => ({ name, n, quotes: quotes.get(name) || [] }));
-  }
-
-  /** 扫一批文本，找出「还值得问一句」的名字：
-      已经在设定里的（含"老陈/陈"这种叫法差异）不问，用户拒绝过的不问。 */
-  function findNewNames(text) {
-    const known = Store.setting.all().map((s) => s.name);
-    const ignored = Store.setting.ignoredNames();
-    return extractNames(text, [])
-      .filter((x) => {
-        if (ignored.includes(x.name)) return false;
-        if (known.some((k) => similarName(k, x.name))) return false;
-        return true;
-      });
-  }
-
-  /** 反过来：从文本里给「已经入库的名字」收集原句，用来补佐证 */
-  function quotesFor(text, names) {
-    const src = String(text || '');
-    if (!src) return {};
-    const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
-    const out = {};
-    (names || []).forEach((n) => {
-      const name = String(n || '').trim();
-      if (name.length < 2) return;
-      const hit = sentences.filter((s) => s.includes(name));
-      if (hit.length) out[name] = hit.slice(0, 3);
-    });
-    return out;
-  }
-
   return {
-    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages, buildEnrichMessages,
-    buildDeaiMessages, DEAI_RULES,
-    generate, probe, cut, extractNames, findNewNames, quotesFor,
+    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages,
+    buildDeaiMessages, buildRequest, pickDelta,
+    DEAI_RULES, PROVIDERS: Providers,
+    generate, probe, cut,
   };
 })();

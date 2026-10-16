@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 08:26 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 08:41 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -707,19 +707,7 @@ input[type="number"] { font-family: var(--mono); }
 }
 .flavorhit__fix { font-size: 12px; color: var(--ink-3); }
 
-/* 新名字的证据句 */
-.nameblock { border-bottom: 1px solid var(--line); }
-.nameblock .namerow { border-bottom: none; }
-.namerow { display: flex; align-items: center; gap: 10px; padding: 12px 2px; }
-.namerow__k { flex: 1; font-size: 14px; font-weight: 550; }
-.namerow__n { font-size: 11.5px; color: var(--ink-3); font-family: var(--mono); }
-.namequote {
-  padding: 0 0 12px 27px;
-  font-size: 12.5px; color: var(--ink-3); line-height: 1.85;
-  font-family: var(--serif);
-}
-
-/* 设定里的正文佐证 */
+/* 引用块：整理本章时列出疑似重复的段落 */
 .quotebox {
   padding: 11px 13px; border-radius: var(--r);
   background: var(--bg); border: 1px dashed var(--line-2);
@@ -929,7 +917,7 @@ html, body { overflow-x: clip; max-width: 100%; }
   .selbar { max-width: calc(100% - 16px); }
 }
 </style>
-<meta name="build" content="2026-10-16 08:26">
+<meta name="build" content="2026-10-16 08:41">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -1100,9 +1088,12 @@ const Store = (() => {
 
   function blankConfig() {
     return {
+      apiType: 'openai',           // openai（兼容）/ anthropic（Claude 原生）
+      provider: 'deepseek',        // 上次选的厂家，只用来回显
       apiBase: 'https://api.deepseek.com/v1',
       apiKey: '',
       model: 'deepseek-chat',
+      maxTokens: 4096,             // Claude 协议必填；其他协议不发送
       temperature: DEFAULT_TEMP,
       freqPenalty: DEFAULT_FREQ,    // 用词重复惩罚：正值让模型少用已经用过的词（治"雷同"最直接）
       presPenalty: DEFAULT_PRES,    // 话题新鲜度：正值鼓励说新的东西，而不是绕回旧内容
@@ -1114,9 +1105,8 @@ const Store = (() => {
       lastCommit: 'append',
       targetWords: 800,
       theme: 'light',
-      deai: true,          // 每次生成都注入「去 AI 味铁律」
+      deai: true,          // 每次生成都注入「写作铁律」
       deaiRules: '',       // 作者自己追加的禁令（会拼在铁律后面）
-      autoSetting: true,   // 写到新人物/地点时，后台自动收录并把说明写完整
     };
   }
 
@@ -1130,7 +1120,6 @@ const Store = (() => {
       settings: [],
       lines: [],
       chat: [],
-      ignored: [],          // 用户拒绝过的名字（每本书独立）
       createdAt: Date.now(),
       at: Date.now(),
     };
@@ -1171,7 +1160,6 @@ const Store = (() => {
       kind: str(s && s.kind, '设定'),
       name: str(s && s.name, '未命名'),
       desc: str(s && s.desc),
-      quotes: arr(s && s.quotes).map(String).filter(Boolean).slice(0, 6),
       at: num(s && s.at, Date.now()),
     };
   }
@@ -1210,7 +1198,6 @@ const Store = (() => {
     out.settings = arr(b && b.settings).map(normSetting);
     out.lines = arr(b && b.lines).map(normLine);
     out.chat = arr(b && b.chat).map(normMsg).filter((m) => m.text !== '');
-    out.ignored = arr(b && b.ignored).map(String).filter(Boolean).slice(0, 500);
     return out;
   }
 
@@ -1233,7 +1220,7 @@ const Store = (() => {
         genre: raw.book && raw.book.genre,
         desc: raw.book && raw.book.desc,
         chapters: raw.chapters, settings: raw.settings, lines: raw.lines,
-        chat: raw.chat, ignored: raw.ignored,
+        chat: raw.chat,
       });
       out.books = [b];
       out.activeBookId = b.id;
@@ -1455,15 +1442,12 @@ const Store = (() => {
     },
   };
 
-  /* ── 设定 ── */
+  /* ── 设定 ──
+     只由作者手动增删改。这里没有任何自动识别、自动补全的入口。 */
   const setting = {
     all: () => book().settings,
-    add({ kind = '设定', name = '', desc = '', quotes = [] } = {}) {
-      const s = {
-        id: uid(), kind, name, desc,
-        quotes: arr(quotes).map(String).filter(Boolean).slice(0, 6),
-        at: Date.now(),
-      };
+    add({ kind = '设定', name = '', desc = '' } = {}) {
+      const s = { id: uid(), kind, name, desc, at: Date.now() };
       book().settings.unshift(s);
       touch('setting-add', s);
       return s;
@@ -1483,34 +1467,6 @@ const Store = (() => {
       touch('setting-remove', { id });
       return true;
     },
-    addQuotes(id, lines) {
-      const s = book().settings.find((x) => x.id === id);
-      if (!s) return null;
-      const set = new Set(s.quotes || []);
-      arr(lines).forEach((l) => { const t = String(l).trim(); if (t) set.add(t); });
-      s.quotes = [...set].slice(-6);
-      touch('setting-update', s);
-      return s;
-    },
-    ignoreName(name) {
-      const n = String(name || '').trim();
-      if (!n) return false;
-      const b = book();
-      if (b.ignored.includes(n)) return false;
-      b.ignored.push(n);
-      touch('setting-ignore', { name: n });
-      return true;
-    },
-    isIgnored(name) { return book().ignored.includes(String(name || '').trim()); },
-    ignoredNames() { return book().ignored; },
-    /** 清掉自动收录的条目（作者自己加的不动） */
-    clearAuto() {
-      const b = book();
-      const before = b.settings.length;
-      b.settings = b.settings.filter((s) => !s.auto);
-      touch('setting-clear');
-      return before - b.settings.length;
-    },
     /** 全清 */
     clearAll() {
       const b = book();
@@ -1518,11 +1474,6 @@ const Store = (() => {
       b.settings = [];
       touch('setting-clear');
       return n;
-    },
-    unignore(name) {
-      const b = book();
-      b.ignored = b.ignored.filter((x) => x !== name);
-      touch('setting-ignore', { name });
     },
   };
 
@@ -1981,6 +1932,86 @@ const AiFlavor = (() => {
    ① 上下文装配（按预算挑料，可预览）② 流式调用 ③ 失败降级到「可复制提示词」
    ════════════════════════════════════════════ */
 
+/* ════════════════════════════════════════════
+   临文录 · 模型接入
+   参考原作者的做法：把「接口协议 / 地址 / 模型 / 密钥」拆成四个独立字段，
+   而不是写死一家。协议只有两种，但覆盖了绝大多数服务：
+     openai    —— /chat/completions，OpenAI 兼容（DeepSeek、Kimi、GLM、通义、方舟、硅基流动、Ollama…）
+     anthropic —— /messages，Claude 原生协议（头、system、流格式都不一样）
+   ════════════════════════════════════════════ */
+
+/** 厂家预设：选一个就把地址和常用模型带出来，也可以完全自己填 */
+const Providers = [
+  {
+    id: 'deepseek', name: 'DeepSeek 深度求索', type: 'openai',
+    base: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+    note: '国内直连、便宜，默认选它',
+  },
+  {
+    id: 'moonshot', name: '月之暗面 Kimi', type: 'openai',
+    base: 'https://api.moonshot.cn/v1',
+    models: ['kimi-k2-0905-preview', 'moonshot-v1-128k', 'moonshot-v1-32k', 'moonshot-v1-8k'],
+    note: '长上下文见长',
+  },
+  {
+    id: 'zhipu', name: '智谱 GLM', type: 'openai',
+    base: 'https://open.bigmodel.cn/api/paas/v4',
+    models: ['glm-4-plus', 'glm-4-air', 'glm-4-flash'],
+    note: 'glm-4-flash 有免费额度',
+  },
+  {
+    id: 'qwen', name: '阿里通义千问', type: 'openai',
+    base: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen3-max'],
+    note: '长文本处理稳',
+  },
+  {
+    id: 'ark', name: '火山方舟 豆包', type: 'openai',
+    base: 'https://ark.cn-beijing.volces.com/api/v3',
+    models: ['doubao-pro-32k', 'doubao-1-5-pro-32k-250115'],
+    note: '模型名要填接入点 ID，形如 ep-xxxx',
+  },
+  {
+    id: 'silicon', name: '硅基流动 SiliconFlow', type: 'openai',
+    base: 'https://api.siliconflow.cn/v1',
+    models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-R1'],
+    note: '一个 Key 调很多开源模型',
+  },
+  {
+    id: 'modelscope', name: '魔搭 ModelScope', type: 'openai',
+    base: 'https://api-inference.modelscope.cn/v1',
+    models: ['Qwen/Qwen3-235B-A22B-Instruct-2507', 'deepseek-ai/DeepSeek-V3.1'],
+    note: '作者自己用的就是这个',
+  },
+  {
+    id: 'openai', name: 'OpenAI', type: 'openai',
+    base: 'https://api.openai.com/v1',
+    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini'],
+    note: '需要能连上',
+  },
+  {
+    id: 'anthropic', name: 'Anthropic Claude', type: 'anthropic',
+    base: 'https://api.anthropic.com/v1',
+    models: ['claude-sonnet-4-5-20250929', 'claude-opus-4-1-20250805', 'claude-3-5-haiku-20241022'],
+    note: '原生协议（不是 OpenAI 兼容），系统会走 /messages',
+  },
+  {
+    id: 'gemini', name: 'Google Gemini', type: 'openai',
+    base: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+    note: '用的是它的 OpenAI 兼容口',
+  },
+  {
+    id: 'ollama', name: '本地 Ollama', type: 'openai',
+    base: 'http://localhost:11434/v1',
+    models: ['qwen2.5:14b', 'llama3.1:8b', 'gemma2:9b'],
+    note: '不用 Key，但得先在本机跑起来',
+    noKey: true,
+  },
+  { id: 'custom', name: '自定义 / 其他中转', type: 'openai', base: '', models: [], note: '地址和模型自己填' },
+];
+
 const AI = (() => {
   const cut = (s, n) => {
     s = String(s || '');
@@ -2225,52 +2256,6 @@ const AI = (() => {
     ];
   }
 
-  /* ── 设定补全：**记录，不是创作** ──
-     上一版这里写的是"原文没写就以常理补足"，结果模型开始自由发挥，
-     给角色乱加外貌、乱编关系 —— 既不像话又白烧 token。
-     现在只有一个动作：把正文里已经写到的信息摘出来。正文没写的，一个字都不加。 */
-  const KIND_GUIDE = {
-    人物: ['容貌', '身材', '性格', '说话习惯', '和别人的关系'],
-    地点: ['位置与环境', '不同时段的样子', '气氛'],
-    物件: ['外形与材质', '来历', '作用'],
-    规则: ['内容', '适用范围', '限制', '代价'],
-    设定: ['是什么', '怎么运作', '对故事的影响'],
-  };
-
-  function buildEnrichMessages(setting, opts = {}) {
-    const kind = setting.kind || '人物';
-    const dims = KIND_GUIDE[kind] || KIND_GUIDE.人物;
-    const bk = Store.books.current();
-    const seen = (setting.quotes || []).filter(Boolean).slice(0, 6);
-
-    const sys = [
-      '你是小说设定**记录员**，不是作者。',
-      '',
-      '**唯一任务：把正文里已经写到的信息摘出来，整理成条目。**',
-      '· 只写下面【正文片段】里明确出现过的内容',
-      '· **没写到的项，整行省略**（不要写"未提及""暂无"，不要推测，不要补全）',
-      '· 严禁编造：外貌、身材、经历、关系、性格，正文没写就一律不写',
-      '· 不许用「可能」「似乎」「大概」「应该是」这类猜测口气',
-      '· 每项一行，格式「· 项目：内容」，一句话说完，不要展开',
-      '· 不要标题、不要解释、不要分点套分点、不要 markdown 标记',
-      '',
-      '如果正文里关于这个条目几乎什么都没写，就**只输出一行或直接输出「（正文暂无）」**。宁可少写，不许编。',
-    ].join('\n');
-
-    const user = [
-      `【作品】《${bk.title}》${bk.genre ? ' · ' + bk.genre : ''}`,
-      `【条目】${setting.name}（${kind}）`,
-      `需要留意的项：${dims.join(' / ')}（正文写了哪项就记哪项）`,
-      seen.length
-        ? `【正文片段（这是唯一依据）】\n${seen.map((q) => '· ' + q).join('\n')}`
-        : '【正文片段】（空）',
-      '',
-      '请只根据上面的片段，摘出这个条目的信息。',
-    ].join('\n\n');
-
-    return [{ role: 'system', content: sys }, { role: 'user', content: user }];
-  }
-
   /* ── 只生成提示词（降级用） ── */
   function buildPromptOnly(opts) {
     return buildMessages(opts).map((m) => {
@@ -2279,36 +2264,85 @@ const AI = (() => {
     }).join('\n\n');
   }
 
+  /* ── 请求装配：两种协议的差异全部收在这里 ──
+     加一家新厂家只要往 Providers 里加一条，不用碰下面的代码。 */
+  function buildRequest(cfg, messages, opts = {}) {
+    const type = cfg.apiType || 'openai';
+    const base = String(cfg.apiBase || '').replace(/\/+$/, '');
+    const temp = Number.isFinite(+opts.temperature) ? +opts.temperature : (Number(cfg.temperature) || 0.9);
+
+    if (type === 'anthropic') {
+      // Claude 原生协议：system 是顶层字段、头用 x-api-key、必须给 max_tokens
+      const sys = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+      const rest = messages.filter((m) => m.role !== 'system').map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      }));
+      return {
+        url: /\/messages$/.test(base) ? base : base + '/messages',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': cfg.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',   // 不加这个浏览器会被 CORS 拦掉
+        },
+        body: {
+          model: cfg.model,
+          system: sys,
+          messages: rest,
+          max_tokens: Number(cfg.maxTokens) || 4096,
+          temperature: Math.min(temp, 1),    // Claude 的温度上限是 1
+          stream: true,
+        },
+      };
+    }
+
+    // OpenAI 兼容（绝大多数厂家走这条）
+    const body = { model: cfg.model, messages, stream: true, temperature: temp };
+    // 采样层面的防重复：光靠提示词压不住"每次都差不多"，这两个参数直接改概率分布
+    if (Number.isFinite(+cfg.freqPenalty) && +cfg.freqPenalty !== 0) body.frequency_penalty = +cfg.freqPenalty;
+    if (Number.isFinite(+cfg.presPenalty) && +cfg.presPenalty !== 0) body.presence_penalty = +cfg.presPenalty;
+    return {
+      url: /\/chat\/completions$/.test(base) ? base : base + '/chat/completions',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+      body,
+    };
+  }
+
+  /** 从一条 SSE 里取出这段新增的文字（两种协议的事件形状不一样） */
+  function pickDelta(type, j) {
+    if (type === 'anthropic') {
+      if (j.type === 'content_block_delta' && j.delta) return j.delta.text || '';
+      return '';
+    }
+    const d = j.choices && j.choices[0] && j.choices[0].delta;
+    return (d && (d.content ?? d.reasoning_content)) || '';
+  }
+
   /* ── 流式调用 ── */
   async function generate(opts) {
     const { onDelta, signal } = opts;
     const st = Store.get();
     const cfg = st.config;
-    if (!cfg.apiKey) throw new Error('还没填 API Key —— 点右上「⋯ → 模型设置」');
+    const type = cfg.apiType || 'openai';
+    if (!cfg.apiKey && type !== 'ollama') {
+      throw new Error('还没填 API Key —— 点右上「⋯ → 模型设置」');
+    }
+    if (!cfg.model) throw new Error('还没选模型 —— 点右上「⋯ → 模型设置」');
 
-    const base = String(cfg.apiBase || '').replace(/\/+$/, '');
-    const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
-    const body = {
-      model: cfg.model,
-      messages: opts.messages || buildMessages(opts),
-      stream: true,
-      temperature: Number.isFinite(+opts.temperature) ? +opts.temperature : (Number(cfg.temperature) || 0.9),
-    };
-    // 采样层面的防重复：光靠提示词压不住"每次都差不多"，这两个参数直接改概率分布
-    if (Number.isFinite(+cfg.freqPenalty) && +cfg.freqPenalty !== 0) body.frequency_penalty = +cfg.freqPenalty;
-    if (Number.isFinite(+cfg.presPenalty) && +cfg.presPenalty !== 0) body.presence_penalty = +cfg.presPenalty;
+    const req = buildRequest(cfg, opts.messages || buildMessages(opts), opts);
 
     let res;
     try {
-      res = await fetch(url, {
+      res = await fetch(req.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
-        body: JSON.stringify(body),
+        headers: req.headers,
+        body: JSON.stringify(req.body),
         signal,
       });
     } catch (e) {
       const err = new Error('连接失败：' + (e && e.message || e) +
-        '\n可能是浏览器跨域限制或网络问题。可点「复制提示词」拿到完整请求，粘贴到任意 AI 里。');
+        '\n\n可能是：① 地址填错 ② 浏览器跨域被拦 ③ 网络不通。\n可以点「复制提示词」，把请求粘到任意 AI 里先写着。');
       err.code = 'NETWORK';
       throw err;
     }
@@ -2316,14 +2350,21 @@ const AI = (() => {
     if (!res.ok) {
       let detail = '';
       try { detail = (await res.text()).slice(0, 400); } catch (_) { }
-      const e = new Error(`接口返回 ${res.status}${res.statusText ? ' ' + res.statusText : ''}\n${detail}`);
+      let hint = '';
+      if (res.status === 401 || res.status === 403) hint = '\n→ 多半是 Key 不对，或者 Key 跟这个厂家不匹配。';
+      else if (res.status === 404) hint = '\n→ 地址或模型名不对。检查一下厂家的 Base URL 和模型名。';
+      else if (res.status === 400) hint = '\n→ 请求被拒：常见是模型名错，或者这个厂家不支持某些参数（试试把「重复惩罚」「新鲜度」调成 0）。';
+      else if (res.status === 429) hint = '\n→ 触发限流或余额不足。';
+      const e = new Error(`接口返回 ${res.status}${res.statusText ? ' ' + res.statusText : ''}${hint}\n${detail}`);
       e.code = 'HTTP';
       throw e;
     }
 
     if (!res.body) {  // 某些环境不支持流
       const j = await res.json();
-      const txt = j?.choices?.[0]?.message?.content || '';
+      const txt = type === 'anthropic'
+        ? ((j.content || [])[0] || {}).text || ''
+        : (j.choices?.[0]?.message?.content || '');
       onDelta && onDelta(txt);
       return txt;
     }
@@ -2347,8 +2388,7 @@ const AI = (() => {
         if (payload === '[DONE]') continue;
         try {
           const j = JSON.parse(payload);
-          const d = j.choices?.[0]?.delta;
-          const piece = (d && (d.content ?? d.reasoning_content)) || '';
+          const piece = pickDelta(type, j);
           if (piece) { full += piece; onDelta && onDelta(piece); }
         } catch (_) { /* 忽略半截 JSON */ }
       }
@@ -2360,14 +2400,19 @@ const AI = (() => {
   async function probe() {
     const st = Store.get();
     const cfg = st.config;
-    if (!cfg.apiKey) return { ok: false, reason: '未填 API Key' };
-    const base = String(cfg.apiBase || '').replace(/\/+$/, '');
-    const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
+    const type = cfg.apiType || 'openai';
+    if (!cfg.apiKey && type !== 'ollama') return { ok: false, reason: '未填 API Key' };
+    if (!cfg.model) return { ok: false, reason: '未填模型名' };
+
+    const req = buildRequest(cfg, [{ role: 'user', content: 'ping' }], { temperature: 0 });
+    req.body.stream = false;
+    if (type === 'anthropic') req.body.max_tokens = 8;
+    else req.body.max_tokens = 8;
     try {
-      const res = await fetch(url, {
+      const res = await fetch(req.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
-        body: JSON.stringify({ model: cfg.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 4, stream: false }),
+        headers: req.headers,
+        body: JSON.stringify(req.body),
       });
       if (!res.ok) return { ok: false, reason: `HTTP ${res.status}：${(await res.text()).slice(0, 200)}` };
       return { ok: true };
@@ -2376,153 +2421,11 @@ const AI = (() => {
     }
   }
 
-  /* ── 从正文里认名字：给「新角色入库」用 ──
-     中文人名没有形态标记，只能靠字头 + 上下文。策略是宁可漏、不可错：
-     ① 只认百家姓与「老/小/阿」这类称呼头；② 必须出现在词首（前面是标点或开头）；
-     ③ 末字不能是虚词动词（否则「老陈把」会被人当成名字）；④ 全文出现 ≥2 次才算候选。
-     结果只是「建议」，要用户勾选后才入库 —— 不自动写。 */
-  const SURNAMES = '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫'
-    + '经房裘缪干解应宗丁宣贲邓郁单杭洪包诸左石崔吉钮龚程嵇邢滑裴陆荣翁荀羊於惠甄麹家封芮羿储靳汲邴糜松'
-    + '井段富巫乌焦巴弓牧隗山谷车侯宓蓬全郗班仰秋仲伊宫宁仇栾暴甘钭厉戎祖武符刘景詹束龙叶幸司韶郜黎蓟薄'
-    + '印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴胥能苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍郤璩桑桂濮牛寿通'
-    + '边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东'
-    + '欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾毋沙乜养鞠须丰巢关蒯相查后红游竺权逯盖益桓公'
-    + '老小阿大';   // 最后四个是称呼头：老陈、小李、阿棠、大刘
-  const STOPCHAR = new Set(('把被让给和跟向从又也都没很才就还只像似乎便即这里那着你我他她它们的是了在有不之与其并且但因为所以如果虽然'
-    + '说道问答笑走来去站坐看想听见叫喊吃喝拉睡望盯摇点抓拿放推拉踢打').split(''));
-  const STOP = new Set(['黄金', '白天', '马上', '高大', '温柔', '江南', '风景', '行李', '手掌', '树木', '花样', '毛病', '程度', '程序', '的确', '仿佛', '石头', '安静', '常常', '通常', '平静', '外面', '上面', '下面', '里面', '前面', '后面', '旁边', '周围', '对方', '结果', '原因', '情况', '时候', '地方', '东西', '事情', '样子', '心里', '眼神', '声音', '问题', '办法', '世界', '人生', '男人', '女人', '孩子', '老人', '学生', '老师', '医生', '警察', '老板', '经理', '司机', '服务',
-    '小时', '小心', '小说', '小学', '小气', '小鬼', '老练', '老实', '老是', '老大', '老家', '老百姓', '大爷', '大方', '大家', '大声', '大约', '大量', '大力', '大门', '大多数',
-    '文明', '文章', '文化', '天气', '风度', '风格', '风景', '风里', '高处', '高兴', '高手', '高处', '市场', '市里', '安全', '面子', '个子', '影子', '影子', '日子', '样子', '曲子', '嗓子',
-    '于是', '终于', '关于', '由于', '对于', '至于', '甚至', '尤其', '曾经', '已经', '立刻', '马上', '忽然', '突然', '果然', '竟然', '居然', '虽然', '固然',
-    '马路', '马上', '道路', '路口', '门口', '巷口', '街口', '出口', '入口', '窗口', '港口', '借口', '伤口', '开口',
-    '白天', '白天', '白色', '白菜', '白发', '白酒', '明白', '坦白', '空白',
-    '空气', '空白', '抽空', '天空', '星空', '太空', '高空',
-    '黄金', '黄土', '黄昏', '黄河', '黄河', '黄沙',
-    '林子', '林里', '林中', '森林', '树林',
-    '沈默', '沉着', '沉着']);
-
-  /** 名字附近出现这些字，才像是在写"人" */
-  const HUMAN_CTX = /[说道问答喊叫哭笑走来去站坐看想听望盯点摇抬低转沉默咬回身手动]/;
-
-  /** 两个名字是不是同一个人的不同叫法（老陈 / 陈） */
-  function similarName(a, b) {
-    const x = String(a || '').trim(), y = String(b || '').trim();
-    if (!x || !y) return false;
-    if (x === y) return true;
-    if (x.length >= 2 && y.length >= 2 && Math.abs(x.length - y.length) <= 1) {
-      return x.includes(y) || y.includes(x);
-    }
-    return false;
-  }
-
-  /**
-   * 从正文里认名字，并带回「证据句」——
-   * 只有名字没用，设定要能长出内容，所以把这个人出现过的原句一起带出来。
-   * 返回 [{ name, n, quotes:[原句…] }]
-   */
-  function extractNames(text, known) {
-    const src = String(text || '');
-    if (src.length < 12) return [];
-    const knownSet = new Set(known || []);
-    const count = new Map();
-    const quotes = new Map();
-    const human = new Map();     // 「像人」的证据数，用来滤掉"高大""安静"这类词
-
-    const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
-
-    for (const sent of sentences) {
-      const seenHere = new Set();
-      for (let i = 0; i < sent.length; i++) {
-        if (SURNAMES.indexOf(sent[i]) < 0) continue;
-        if (i > 0 && /[\u4e00-\u9fa5]/.test(sent[i - 1])) continue;
-
-        let name = null;
-        for (const len of [3, 2]) {          // 先试三字，末字是虚词就退回两字
-          const cand = sent.slice(i, i + len);
-          if (cand.length < len) continue;
-          if (!/^[\u4e00-\u9fa5]+$/.test(cand)) continue;
-          if (STOPCHAR.has(cand[cand.length - 1])) continue;
-          name = cand;
-          break;
-        }
-        if (!name || STOP.has(name) || knownSet.has(name)) continue;
-
-        if (!seenHere.has(name)) {
-          seenHere.add(name);
-          count.set(name, (count.get(name) || 0) + 1);
-
-          const around = sent.slice(Math.max(0, i - 2), i + name.length + 4);
-          const after = sent.slice(i + name.length, i + name.length + 1);
-          if (HUMAN_CTX.test(around)) human.set(name, (human.get(name) || 0) + 1);
-          if (/^[「『"]/.test(after)) human.set(name, (human.get(name) || 0) + 1);
-
-          const arr = quotes.get(name) || [];
-          if (arr.length < 3 && !arr.includes(sent)) arr.push(sent);
-          quotes.set(name, arr);
-        }
-        i += name.length - 1;
-      }
-    }
-
-    // ── 地名：不走姓氏那条路，靠后缀认 ──
-    // 「青石巷」「东堤码头」这种根本没有姓氏，用姓氏表永远匹配不到。
-    const PLACE_TAILS = '村|镇|城|街|巷子|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|大道|路|谷|原|岛|洲|关|驿|站|园|苑|坊|湾|岭|峰|溪|滩|坪|坡';
-    const placeRe = new RegExp(`([\\u4e00-\\u9fa5]{1,3})(${PLACE_TAILS})`, 'g');
-    let pm;
-    while ((pm = placeRe.exec(src)) !== null) {
-      const name = pm[1] + pm[2];
-      if (name.length < 2 || name.length > 5) continue;
-      if (STOP.has(name) || knownSet.has(name)) continue;
-      count.set(name, (count.get(name) || 0) + 1);
-      human.set(name, (human.get(name) || 0) + 1);      // 有地名后缀本身就够
-      if (!quotes.has(name)) {
-        const at = src.lastIndexOf('。', pm.index);
-        const head = at >= 0 ? at + 1 : Math.max(0, pm.index - 12);
-        const end = src.indexOf('。', pm.index + name.length);
-        const sent = src.slice(head, end === -1 ? pm.index + name.length + 8 : end + 1).trim();
-        if (sent) quotes.set(name, [sent]);
-      }
-    }
-
-    return [...count.entries()]
-      .filter(([name, n]) => n >= 2 && (human.get(name) || 0) >= 1)   // 出现过两次以上，且至少有"像人"的上下文
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, n]) => ({ name, n, quotes: quotes.get(name) || [] }));
-  }
-
-  /** 扫一批文本，找出「还值得问一句」的名字：
-      已经在设定里的（含"老陈/陈"这种叫法差异）不问，用户拒绝过的不问。 */
-  function findNewNames(text) {
-    const known = Store.setting.all().map((s) => s.name);
-    const ignored = Store.setting.ignoredNames();
-    return extractNames(text, [])
-      .filter((x) => {
-        if (ignored.includes(x.name)) return false;
-        if (known.some((k) => similarName(k, x.name))) return false;
-        return true;
-      });
-  }
-
-  /** 反过来：从文本里给「已经入库的名字」收集原句，用来补佐证 */
-  function quotesFor(text, names) {
-    const src = String(text || '');
-    if (!src) return {};
-    const sentences = src.split(/(?<=[。！？!?…\n])/).map((s) => s.trim()).filter(Boolean);
-    const out = {};
-    (names || []).forEach((n) => {
-      const name = String(n || '').trim();
-      if (name.length < 2) return;
-      const hit = sentences.filter((s) => s.includes(name));
-      if (hit.length) out[name] = hit.slice(0, 3);
-    });
-    return out;
-  }
-
   return {
-    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages, buildEnrichMessages,
-    buildDeaiMessages, DEAI_RULES,
-    generate, probe, cut, extractNames, findNewNames, quotesFor,
+    buildContext, buildMessages, buildPromptOnly, buildSmoothMessages,
+    buildDeaiMessages, buildRequest, pickDelta,
+    DEAI_RULES, PROVIDERS: Providers,
+    generate, probe, cut,
   };
 })();
 
@@ -3581,15 +3484,6 @@ const ChatView = (() => {
         Store.chat.markClipped(m.id);
         Store.chat.attach(m.id, ch.id);   // 落盘后才算真属于这一章
 
-        // 顺带把「已经在库里的角色」的新原句补成佐证，设定会自己长厚
-        const known = Store.setting.all();
-        const q = AI.quotesFor(m.text, known.map((s) => s.name));
-        let added = 0;
-        Object.keys(q).forEach((name) => {
-          const s = known.find((x) => x.name === name);
-          if (s) { Store.setting.addQuotes(s.id, q[name]); added++; }
-        });
-
         App.closeSheet(); renderFlow();
         if (ReadView) ReadView.refresh();
 
@@ -3597,11 +3491,8 @@ const ChatView = (() => {
           Store.config.set({ commitMode: 'auto' });
           App.toast('已设置：以后直接续接到末尾');
         } else {
-          App.toast(`已写进 ${ch.title}${added ? ` · 顺带补了 ${added} 条设定佐证` : ''}`, 2400);
+          App.toast(`已写进 ${ch.title}`, 2400);
         }
-
-        // 静默吸收新名字并补全设定 —— 作者不需要知道这个过程
-        absorbNames(m.text);
       };
 
       r.querySelectorAll('.cm-opt').forEach((b) => b.onclick = () => doCommit(b.dataset.k));
@@ -3619,40 +3510,7 @@ const ChatView = (() => {
     Store.chat.attach(m.id, ch.id);
     if (ReadView) ReadView.refresh();
     App.toast('已自动写进 ' + ch.title + '（可在设置里关掉）', 2400);
-    absorbNames(m.text);
   }
-
-  /* ── 新名字：静默收录 ──
-     作者要的是"先立住人、再写剧情"，所以入库与补全都不打扰他。
-     但**只收有戏份的**：露一面的路人、一次性的地名不收 —— 收进来也是垃圾。
-     补全用的依据只有正文原句，模型只做摘录，正文没写的不许编。 */
-  function absorbNames(text) {
-    if (Store.get().config.autoSetting === false) return;
-    let names = [];
-    try { names = AI.findNewNames(text); } catch (_) { return; }
-    if (!names.length) return;
-
-    // 至少出现 3 次才算"这个角色有戏"，一次两次的是路人
-    const main = names.filter((x) => x.n >= 3);
-    if (!main.length) return;
-
-    const PLACE = /(村|镇|城|街|巷|港|码头|山|河|湖|海|店|楼|院|堂|馆|宅|府|寺|庙|桥|路|道|谷|原|岛|洲|关|驿|站)$/;
-    const ids = main.slice(0, 2).map((x) => Store.setting.add({   // 一次最多两条，省 token
-      kind: PLACE.test(x.name) ? '地点' : '人物',
-      name: x.name,
-      desc: '',
-      quotes: x.quotes || [],
-      auto: true,
-    }).id);
-
-    if (typeof WorldView !== 'undefined' && WorldView) {
-      (async () => {
-        for (const id of ids) await WorldView.fill(id);
-        WorldView.render();
-      })();
-    }
-  }
-
 
   /* ── 重新生成：同样的要求，换一种写法 ──
      光"再跑一次"没用 —— 上下文一模一样，模型会吐回几乎相同的文本，
@@ -3973,7 +3831,7 @@ const ChatView = (() => {
   return {
     init, refreshAll, renderFlow, renderTarget, hint, captureSelection, send,
     toggleFind, openContext, openSegments, setReplyTo, setBaseText, clearReplyTo,
-    absorbNames, openCommit, openFlavor,
+    openCommit, openFlavor,
   };
 })();
 
@@ -4100,43 +3958,6 @@ const WorldView = (() => {
       <div class="blank__title">没有匹配「${esc(filter)}」的条目</div>
       <div class="blank__acts"><button class="btn btn--ghost" data-clearfilter>清除搜索</button></div>
     </div>`;
-  }
-
-  /* ── 静默把一条设定的信息摘出来 ──
-     只做一件事：把正文里已经写到的摘出来。正文没写的，一个字都不加。
-     所以——没有正文依据就根本不调用模型，省 token。 */
-  async function fill(id) {
-    const s = Store.setting.all().find((x) => x.id === id);
-    if (!s) return null;
-    if (s.desc && s.desc.trim()) return null;                  // 已有内容不动
-    if (!s.quotes || !s.quotes.length) return null;             // 没有正文依据 → 不写，不花 token
-    if (!Store.config.ready()) return null;                     // 没配模型就安静跳过
-    try {
-      let acc = '';
-      const txt = await AI.generate({
-        messages: AI.buildEnrichMessages(s),
-        onDelta: (p) => { acc += p; },
-      });
-      const out = (txt || acc).trim();
-      if (!out || /^（?正文暂无）?$/.test(out)) return null;      // 模型说没什么可记，就别留空条目
-      Store.setting.update(id, { desc: out, auto: true });
-      return out;
-    } catch (e) {
-      console.warn('[设定] 摘录失败（不影响写作）', e);
-      return null;
-    }
-  }
-
-  /** 后台把还没有说明的条目补上，一次最多几条，避免一次烧太多 */
-  async function fillMissing(limit = 3) {
-    if (!Store.config.ready()) return 0;
-    const targets = Store.setting.all().filter((s) => !(s.desc || '').trim()).slice(0, limit);
-    let n = 0;
-    for (const s of targets) {
-      if (await fill(s.id)) n++;
-    }
-    if (n) render();
-    return n;
   }
 
   /* ── 编辑面板 ── */
@@ -4305,7 +4126,7 @@ const WorldView = (() => {
     render();
   }
 
-  return { init, render, setPick, fill, fillMissing, editSetting };
+  return { init, render, setPick, editSetting };
 })();
 
 /* ─── js/app.js ─── */
@@ -4376,24 +4197,44 @@ const App = (() => {
     document.body.classList.remove('is-sheet');
   }
 
-  /* ── 设置：模型 ── */
+  /* ── 设置：模型 ──
+     每个厂家的地址、协议、模型名都不一样，所以先选厂家，再把地址和模型带出来。
+     选"自定义"就完全自己填 —— 预设只是省事，不是限制。 */
   function openModelSettings() {
     const c = Store.get().config;
-    const ready = Store.config.ready();
+    const providers = AI.PROVIDERS;
+    const cur = providers.find((p) => p.id === c.provider) || providers[providers.length - 1];
+    const modelList = cur.models || [];
+
     sheet('模型设置', `
       <div class="field">
-        <label class="field__label">接口地址（OpenAI 兼容）</label>
-        <input class="input" id="cfgBase" value="${esc(c.apiBase)}" placeholder="https://api.deepseek.com/v1">
-        <div class="field__hint">尾部可带或不带 <code>/chat/completions</code>，会自动补全。</div>
+        <label class="field__label">用哪一家</label>
+        <select class="select" id="cfgProvider">
+          ${providers.map((p) => `<option value="${p.id}" ${p.id === cur.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+        </select>
+        <div class="field__hint" id="cfgProvNote">${esc(cur.note || '')}</div>
       </div>
+
       <div class="field">
-        <label class="field__label">API Key</label>
-        <input class="input" id="cfgKey" type="password" value="${esc(c.apiKey)}" placeholder="sk-…">
+        <label class="field__label">模型</label>
+        <input class="input" id="cfgModel" value="${esc(c.model)}" placeholder="${esc(modelList[0] || '模型名')}">
+        <div class="chips" id="cfgModelList" style="padding-top:9px"></div>
+        <div class="field__hint" id="cfgModelHint">点上面任何一个直接换上，也可以自己敲。</div>
+      </div>
+
+      <div class="field">
+        <label class="field__label">接口地址</label>
+        <input class="input" id="cfgBase" value="${esc(c.apiBase)}" placeholder="${esc(cur.base || 'https://…')}">
+        <div class="field__hint">
+          尾部带不带 <code>/chat/completions</code> 都行，会自动补。<br>
+          协议：<b id="cfgTypeName">${c.apiType === 'anthropic' ? 'Claude 原生（/messages）' : 'OpenAI 兼容（/chat/completions）'}</b>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field__label">API Key ${cur.noKey ? '（这家不用填）' : ''}</label>
+        <input class="input" id="cfgKey" type="password" value="${esc(c.apiKey)}" placeholder="${cur.noKey ? '不需要' : 'sk-…'}">
         <div class="field__hint">只存在这台设备的浏览器里，不会上传到别处。</div>
-      </div>
-      <div class="field">
-        <label class="field__label">模型名</label>
-        <input class="input" id="cfgModel" value="${esc(c.model)}" placeholder="deepseek-chat">
       </div>
       <div class="row">
         <div class="field">
@@ -4427,16 +4268,9 @@ const App = (() => {
       </button>
 
       <div class="sec-title">设定</div>
-      <label class="pickrow">
-        <input type="checkbox" id="cfgAutoSet" ${c.autoSetting === false ? '' : 'checked'}>
-        <span class="pickrow__k">后台自动收录设定并写完整说明</span>
-      </label>
       <div class="field__hint">
-        写到新的人物/地点时自动入库并把说明写全，过程不打扰你 —— 写完自己去设定页看就行。<br>
-        人物 → 外貌、脾气、口癖、和主角的关系<br>
-        地点 → 位置环境、不同时段的样子、气氛<br>
-        物件 → 外形材质、来历、作用<br>
-        规则 → 内容、适用范围、限制、代价
+        设定集只由你自己维护：在「世界线」页手动添加、编辑、删除。<br>
+        写正文时系统<b>不会</b>自动收录角色、也不会自动写说明。
       </div>
 
       <div class="sec-title">外观</div>
@@ -4483,11 +4317,49 @@ const App = (() => {
       <div class="field__hint" id="cfgOut" style="margin-top:10px">${ready ? '已配置' : '还没填 Key'}</div>
     `, (r) => {
       const g = (id) => r.querySelector(id);
+
+      /* 厂家 → 自动带出地址、协议、模型 */
+      const provSel = g('#cfgProvider');
+      const baseInput = g('#cfgBase');
+      const modelInput = g('#cfgModel');
+      const noteBox = g('#cfgProvNote');
+      const modelHint = g('#cfgModelHint');
+      const modelChips = g('#cfgModelList');
+      const typeName = g('#cfgTypeName');
+      const keyInput = g('#cfgKey');
+
+      function fillProvider(p, replaceValues) {
+        if (!p) return;
+        noteBox.textContent = p.note || '';
+        if (replaceValues) {
+          if (p.id !== 'custom') baseInput.value = p.base || '';
+          if (p.models && p.models.length) modelInput.value = p.models[0];
+        }
+        modelInput.placeholder = (p.models && p.models[0]) || '模型名';
+        typeName.textContent = p.type === 'anthropic'
+          ? 'Claude 原生（/messages）' : 'OpenAI 兼容（/chat/completions）';
+        keyInput.placeholder = p.noKey ? '不需要' : 'sk-…';
+        const list = p.models || [];
+        modelChips.innerHTML = list
+          .map((m) => `<button type="button" class="chip-btn" data-m="${esc(m)}">${esc(m)}</button>`).join('');
+        modelChips.querySelectorAll('[data-m]').forEach((b) => {
+          if (b.dataset.m === modelInput.value) b.classList.add('is-on');
+          b.onclick = () => {
+            modelInput.value = b.dataset.m;
+            modelChips.querySelectorAll('[data-m]').forEach((x) => x.classList.toggle('is-on', x === b));
+          };
+        });
+        modelHint.textContent = list.length
+          ? '点上面任何一个直接换上，也可以自己敲。'
+          : '这家没有预设模型，直接填你要用的名字。';
+      }
+
+      fillProvider(AI.PROVIDERS.find((x) => x.id === provSel.value), false);
+      provSel.onchange = () => fillProvider(AI.PROVIDERS.find((x) => x.id === provSel.value), true);
       const tempRange = g('#cfgTemp');
       const tempLabel = tempRange.previousElementSibling;
       tempRange.oninput = () => { tempLabel.textContent = '温度 ' + Number(tempRange.value).toFixed(1); };
-      const freqRange = g('#cfgFreq');
-      const freqLabel = freqRange.previousElementSibling;
+      const freqRange = g('#cfgFreq');      const freqLabel = freqRange.previousElementSibling;
       freqRange.oninput = () => { freqLabel.textContent = '用词重复惩罚 ' + Number(freqRange.value).toFixed(1); };
       const presRange = g('#cfgPres');
       const presLabel = presRange.previousElementSibling;
@@ -4515,10 +4387,14 @@ const App = (() => {
       g('#cfgSave').onclick = () => {
         const cm = r.querySelector('input[name="cmode"]:checked');
         const th = r.querySelector('input[name="theme"]:checked');
+        const prov = AI.PROVIDERS.find((x) => x.id === g('#cfgProvider').value)
+          || AI.PROVIDERS[AI.PROVIDERS.length - 1];
         Store.config.set({
-          apiBase: g('#cfgBase').value.trim() || 'https://api.deepseek.com/v1',
+          apiType: prov.type,                                  // 协议跟着厂家走
+          provider: prov.id,
+          apiBase: g('#cfgBase').value.trim() || prov.base,
           apiKey: g('#cfgKey').value.trim(),
-          model: g('#cfgModel').value.trim() || 'deepseek-chat',
+          model: g('#cfgModel').value.trim() || (prov.models[0] || ''),
           temperature: Number(tempRange.value),
           freqPenalty: Number(g('#cfgFreq').value) || 0,
           presPenalty: Number(g('#cfgPres').value) || 0,
@@ -4528,12 +4404,12 @@ const App = (() => {
           commitMode: cm ? cm.value : 'ask',
           targetWords: Number(g('#cfgWords').value) || 0,
           theme: th ? th.value : 'light',
-          deai: Store.get().config.deai,          // 这两项在「写作铁律」那一页改，别在这里覆盖
+          deai: Store.get().config.deai,          // 这两项在「写作设定」那一页改，别在这里覆盖
           deaiRules: Store.get().config.deaiRules,
-          autoSetting: g('#cfgAutoSet') ? g('#cfgAutoSet').checked : true,
         });
         applyTheme();
-        closeSheet(); ChatView.hint(); toast('已保存');
+        closeSheet(); ChatView.hint(); renderTop();
+        toast(`已保存 · ${prov.name} / ${Store.get().config.model}`, 2600);
       };
       g('#cfgTest').onclick = async () => {
         g('#cfgSave').click();
@@ -5047,34 +4923,20 @@ const App = (() => {
     // world
     sheet('世界线与设定 · 菜单', `
       <button class="navrow" id="vaPick"><span class="navrow__k">多选管理</span><span class="navrow__v">批量删除 / 整理</span><span class="navrow__a">›</span></button>
-      <button class="navrow" id="vaIgnored"><span class="navrow__k">忽略名单</span><span class="navrow__v">${Store.setting.ignoredNames().length} 个名字不再收</span><span class="navrow__a">›</span></button>
       <div class="sec-title">存档</div>
       <button class="navrow" id="vaWorldExp"><span class="navrow__k">导出设定与世界线</span><span class="navrow__v">.json</span><span class="navrow__a">›</span></button>
       <button class="navrow" id="vaWorldImp"><span class="navrow__k">导入存档</span><span class="navrow__v">装成新书 / 替换</span><span class="navrow__a">›</span></button>
       <div class="sec-title">清理</div>
-      <button class="navrow" id="vaCleanAuto">
-        <span class="navrow__k">删掉自动收录的</span>
-        <span class="navrow__v">你自己加的会留下</span>
-      </button>
       <button class="navrow navrow--danger" id="vaCleanAll">
         <span class="navrow__k">清空全部设定</span>
         <span class="navrow__v">世界线不受影响</span>
       </button>
       <div class="field__hint" style="margin-top:14px">
-        写到有戏份的新角色时，系统会把它收进设定，并**只把正文里已经写到的**信息摘出来
-        —— 正文没写的不许编。不想要这个行为，可以在设置里关掉。
+        设定集只由你自己维护 —— 写正文时系统不会自动收录角色，也不会自动写说明。
       </div>
       ${globalRows()}
     `, (r) => {
-      r.querySelector('#vaIgnored').onclick = () => { closeSheet(); openIgnored(); };
       r.querySelector('#vaPick').onclick = () => { closeSheet(); WorldView.setPick(true); };
-      r.querySelector('#vaCleanAuto').onclick = () => {
-        const n = Store.setting.all().filter((s) => s.auto).length;
-        if (!n) return toast('没有自动收录的条目');
-        if (!confirm(`删掉 ${n} 条自动收录的设定？你自己加的会留下。`)) return;
-        const gone = Store.setting.clearAuto();
-        closeSheet(); renderAll(); toast(`已删掉 ${gone} 条`);
-      };
       r.querySelector('#vaCleanAll').onclick = () => {
         const n = Store.setting.all().length;
         if (!n) return toast('设定是空的');
@@ -5090,32 +4952,6 @@ const App = (() => {
       };
       r.querySelector('#vaWorldImp').onclick = () => { closeSheet(); openDataSettings('import'); };
       bindGlobal(r);
-    });
-  }
-
-  /* ── 忽略名单：被拒绝过的名字，可以放出来重新问 ── */
-  function openIgnored() {
-    const list = Store.setting.ignoredNames();
-    sheet('忽略名单', `
-      <div class="field__hint" style="margin-bottom:12px">
-        这些名字你选过「不用」，系统不会再拿它们问你。放出来之后会重新参与识别。
-      </div>
-      ${list.length ? list.map((n) => `
-        <div class="kv">
-          <span class="kv__k">${esc(n)}</span>
-          <button class="mini-btn" data-un="${esc(n)}">放出来</button>
-        </div>`).join('') : '<div class="field__hint">名单是空的。</div>'}
-      ${list.length > 1 ? '<button class="btn btn--ghost" id="igClear" style="margin-top:16px">全部放出来</button>' : ''}
-    `, (r) => {
-      r.querySelectorAll('[data-un]').forEach((b) => b.onclick = () => {
-        Store.setting.unignore(b.dataset.un);
-        closeSheet(); openIgnored();
-      });
-      const c = r.querySelector('#igClear');
-      if (c) c.onclick = () => {
-        [...list].forEach((n) => Store.setting.unignore(n));
-        closeSheet(); openIgnored();
-      };
     });
   }
 
@@ -5239,7 +5075,7 @@ const App = (() => {
   return {
     boot, go, toast, sheet, closeSheet, renderAll,
     openSettings, openRules, openModelSettings, openBookSettings, openNewBook,
-    openDataSettings, openImportPreview, openIgnored, openViewAction, exportText,
+    openDataSettings, openImportPreview, openViewAction, exportText,
     sheetError: () => lastSheetError,
     captureSelection: (a, t) => ChatView.captureSelection(a, t),
   };

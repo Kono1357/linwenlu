@@ -29,9 +29,12 @@ const Store = (() => {
 
   function blankConfig() {
     return {
+      apiType: 'openai',           // openai（兼容）/ anthropic（Claude 原生）
+      provider: 'deepseek',        // 上次选的厂家，只用来回显
       apiBase: 'https://api.deepseek.com/v1',
       apiKey: '',
       model: 'deepseek-chat',
+      maxTokens: 4096,             // Claude 协议必填；其他协议不发送
       temperature: DEFAULT_TEMP,
       freqPenalty: DEFAULT_FREQ,    // 用词重复惩罚：正值让模型少用已经用过的词（治"雷同"最直接）
       presPenalty: DEFAULT_PRES,    // 话题新鲜度：正值鼓励说新的东西，而不是绕回旧内容
@@ -43,9 +46,8 @@ const Store = (() => {
       lastCommit: 'append',
       targetWords: 800,
       theme: 'light',
-      deai: true,          // 每次生成都注入「去 AI 味铁律」
+      deai: true,          // 每次生成都注入「写作铁律」
       deaiRules: '',       // 作者自己追加的禁令（会拼在铁律后面）
-      autoSetting: true,   // 写到新人物/地点时，后台自动收录并把说明写完整
     };
   }
 
@@ -59,7 +61,6 @@ const Store = (() => {
       settings: [],
       lines: [],
       chat: [],
-      ignored: [],          // 用户拒绝过的名字（每本书独立）
       createdAt: Date.now(),
       at: Date.now(),
     };
@@ -100,7 +101,6 @@ const Store = (() => {
       kind: str(s && s.kind, '设定'),
       name: str(s && s.name, '未命名'),
       desc: str(s && s.desc),
-      quotes: arr(s && s.quotes).map(String).filter(Boolean).slice(0, 6),
       at: num(s && s.at, Date.now()),
     };
   }
@@ -139,7 +139,6 @@ const Store = (() => {
     out.settings = arr(b && b.settings).map(normSetting);
     out.lines = arr(b && b.lines).map(normLine);
     out.chat = arr(b && b.chat).map(normMsg).filter((m) => m.text !== '');
-    out.ignored = arr(b && b.ignored).map(String).filter(Boolean).slice(0, 500);
     return out;
   }
 
@@ -162,7 +161,7 @@ const Store = (() => {
         genre: raw.book && raw.book.genre,
         desc: raw.book && raw.book.desc,
         chapters: raw.chapters, settings: raw.settings, lines: raw.lines,
-        chat: raw.chat, ignored: raw.ignored,
+        chat: raw.chat,
       });
       out.books = [b];
       out.activeBookId = b.id;
@@ -384,15 +383,12 @@ const Store = (() => {
     },
   };
 
-  /* ── 设定 ── */
+  /* ── 设定 ──
+     只由作者手动增删改。这里没有任何自动识别、自动补全的入口。 */
   const setting = {
     all: () => book().settings,
-    add({ kind = '设定', name = '', desc = '', quotes = [] } = {}) {
-      const s = {
-        id: uid(), kind, name, desc,
-        quotes: arr(quotes).map(String).filter(Boolean).slice(0, 6),
-        at: Date.now(),
-      };
+    add({ kind = '设定', name = '', desc = '' } = {}) {
+      const s = { id: uid(), kind, name, desc, at: Date.now() };
       book().settings.unshift(s);
       touch('setting-add', s);
       return s;
@@ -412,34 +408,6 @@ const Store = (() => {
       touch('setting-remove', { id });
       return true;
     },
-    addQuotes(id, lines) {
-      const s = book().settings.find((x) => x.id === id);
-      if (!s) return null;
-      const set = new Set(s.quotes || []);
-      arr(lines).forEach((l) => { const t = String(l).trim(); if (t) set.add(t); });
-      s.quotes = [...set].slice(-6);
-      touch('setting-update', s);
-      return s;
-    },
-    ignoreName(name) {
-      const n = String(name || '').trim();
-      if (!n) return false;
-      const b = book();
-      if (b.ignored.includes(n)) return false;
-      b.ignored.push(n);
-      touch('setting-ignore', { name: n });
-      return true;
-    },
-    isIgnored(name) { return book().ignored.includes(String(name || '').trim()); },
-    ignoredNames() { return book().ignored; },
-    /** 清掉自动收录的条目（作者自己加的不动） */
-    clearAuto() {
-      const b = book();
-      const before = b.settings.length;
-      b.settings = b.settings.filter((s) => !s.auto);
-      touch('setting-clear');
-      return before - b.settings.length;
-    },
     /** 全清 */
     clearAll() {
       const b = book();
@@ -447,11 +415,6 @@ const Store = (() => {
       b.settings = [];
       touch('setting-clear');
       return n;
-    },
-    unignore(name) {
-      const b = book();
-      b.ignored = b.ignored.filter((x) => x !== name);
-      touch('setting-ignore', { name });
     },
   };
 
