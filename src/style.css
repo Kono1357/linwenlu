@@ -516,12 +516,21 @@ button { cursor: pointer; }
   width: 26px; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent);
 }
 
-/* ─────────── 抽屉 ─────────── */
-.sheet { position: fixed; inset: 0; z-index: 60; }
+/* ─────────── 抽屉 ───────────
+   高度一律用百分比算，不用 vh/dvh：
+   .sheet 是 fixed + inset:0，本身就等于视口大小，
+   所以"88%"永远算得对；而 dvh 在较旧的 iOS 上不支持，
+   一旦失效，面板会被内容撑爆、既不滚也看不到底部按钮。 */
+.sheet {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: stretch; justify-content: flex-end;
+}
 .sheet__mask { position: absolute; inset: 0; background: rgba(35,32,25,.32); backdrop-filter: blur(2px); animation: fade .16s var(--ease); }
 .sheet__panel {
-  position: absolute; right: 0; top: 0; bottom: 0;
+  position: relative;
   width: min(460px, 100%);
+  height: 100%;
+  min-height: 0;
   background: var(--surface); border-left: 1px solid var(--line-2);
   display: flex; flex-direction: column;
   animation: slide .22s var(--ease);
@@ -529,14 +538,18 @@ button { cursor: pointer; }
 }
 @keyframes slide { from { transform: translateX(20px); opacity: .5; } to { transform: none; opacity: 1; } }
 .sheet__head {
+  flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
   padding: calc(var(--safe-t) + 16px) 18px 13px;
   border-bottom: 1px solid var(--line);
 }
 .sheet__head h3 { margin: 0; font-size: 15px; font-weight: 650; }
 .sheet__body {
-  flex: 1 1 auto; min-height: 0;      /* min-height:0 是 flex 子项能滚的前提 */
+  flex: 1 1 auto;
+  min-height: 0;              /* flex 子项能滚的前提 */
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 18px 18px calc(24px + var(--safe-b));
 }
 
@@ -888,17 +901,19 @@ html, body { overflow-x: clip; max-width: 100%; }
   .reader__tools .mini-btn { padding: 8px 11px; }
   .chat__headActs { flex: 0 0 auto; gap: 5px; }
   .seg__btn { padding: 9px 20px; }
-  /* 抽屉在手机上从底部上来，拇指够得着 */
+  /* 抽屉在手机上从底部上来，拇指够得着。
+     高度用 88%（相对 .sheet 这个 fixed 全屏容器）—— 不用 dvh，
+     因为 dvh 在旧 iOS 上无效，会导致面板被撑爆且滚不动。 */
+  .sheet { align-items: flex-end; }
   .sheet__panel {
-    top: auto; left: 0; right: 0; bottom: 0;
-    width: 100%; max-height: 88dvh;
+    width: 100%; height: auto;
+    max-height: 88%;
     border-left: none; border-top: 1px solid var(--line-2);
     border-radius: 18px 18px 0 0;
     animation: sheetUp .24s var(--ease);
   }
   @keyframes sheetUp { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
   .sheet__head { border-radius: 18px 18px 0 0; }
-  .sheet__body { max-height: calc(88dvh - 60px); }
   /* 正文选中后工具条不挡字 */
   .selbar { max-width: calc(100% - 16px); }
 }

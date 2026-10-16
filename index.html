@@ -1,4 +1,4 @@
-<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 03:07 -->
+<!-- 临文录 · 由 build.js 生成，请勿直接编辑；改 src/ 后重新构建 · build 2026-10-16 08:00 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -527,12 +527,21 @@ button { cursor: pointer; }
   width: 26px; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent);
 }
 
-/* ─────────── 抽屉 ─────────── */
-.sheet { position: fixed; inset: 0; z-index: 60; }
+/* ─────────── 抽屉 ───────────
+   高度一律用百分比算，不用 vh/dvh：
+   .sheet 是 fixed + inset:0，本身就等于视口大小，
+   所以"88%"永远算得对；而 dvh 在较旧的 iOS 上不支持，
+   一旦失效，面板会被内容撑爆、既不滚也看不到底部按钮。 */
+.sheet {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: stretch; justify-content: flex-end;
+}
 .sheet__mask { position: absolute; inset: 0; background: rgba(35,32,25,.32); backdrop-filter: blur(2px); animation: fade .16s var(--ease); }
 .sheet__panel {
-  position: absolute; right: 0; top: 0; bottom: 0;
+  position: relative;
   width: min(460px, 100%);
+  height: 100%;
+  min-height: 0;
   background: var(--surface); border-left: 1px solid var(--line-2);
   display: flex; flex-direction: column;
   animation: slide .22s var(--ease);
@@ -540,14 +549,18 @@ button { cursor: pointer; }
 }
 @keyframes slide { from { transform: translateX(20px); opacity: .5; } to { transform: none; opacity: 1; } }
 .sheet__head {
+  flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
   padding: calc(var(--safe-t) + 16px) 18px 13px;
   border-bottom: 1px solid var(--line);
 }
 .sheet__head h3 { margin: 0; font-size: 15px; font-weight: 650; }
 .sheet__body {
-  flex: 1 1 auto; min-height: 0;      /* min-height:0 是 flex 子项能滚的前提 */
+  flex: 1 1 auto;
+  min-height: 0;              /* flex 子项能滚的前提 */
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 18px 18px calc(24px + var(--safe-b));
 }
 
@@ -899,22 +912,24 @@ html, body { overflow-x: clip; max-width: 100%; }
   .reader__tools .mini-btn { padding: 8px 11px; }
   .chat__headActs { flex: 0 0 auto; gap: 5px; }
   .seg__btn { padding: 9px 20px; }
-  /* 抽屉在手机上从底部上来，拇指够得着 */
+  /* 抽屉在手机上从底部上来，拇指够得着。
+     高度用 88%（相对 .sheet 这个 fixed 全屏容器）—— 不用 dvh，
+     因为 dvh 在旧 iOS 上无效，会导致面板被撑爆且滚不动。 */
+  .sheet { align-items: flex-end; }
   .sheet__panel {
-    top: auto; left: 0; right: 0; bottom: 0;
-    width: 100%; max-height: 88dvh;
+    width: 100%; height: auto;
+    max-height: 88%;
     border-left: none; border-top: 1px solid var(--line-2);
     border-radius: 18px 18px 0 0;
     animation: sheetUp .24s var(--ease);
   }
   @keyframes sheetUp { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
   .sheet__head { border-radius: 18px 18px 0 0; }
-  .sheet__body { max-height: calc(88dvh - 60px); }
   /* 正文选中后工具条不挡字 */
   .selbar { max-width: calc(100% - 16px); }
 }
 </style>
-<meta name="build" content="2026-10-16 03:07">
+<meta name="build" content="2026-10-16 08:00">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
@@ -1562,6 +1577,15 @@ const Store = (() => {
       return m;
     },
     clear() { book().chat = []; touch('chat-clear'); },
+    /** 删掉一条 */
+    remove(id) {
+      const b = book();
+      const i = b.chat.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      b.chat.splice(i, 1);
+      touch('chat-remove', { id });
+      return true;
+    },
     clearChapter(chapterId) {
       if (!chapterId) return 0;
       const b = book();
@@ -2122,6 +2146,9 @@ const AI = (() => {
     '· 这些词尽量别用：认真、光芒、摩挲、挑眉、不易察觉、勾起嘴角、深吸一口气、微微、一丝',
     '· 对话像真人说话：允许省略句、语气词、打断；长短句交错，不要一人一句轮着来',
     '· 每个角色要有辨识度：遮住名字也能看出是谁在说话',
+    '· 不许复述上文：前面已经写过的场景、动作、对话，不要再描一遍，直接往下写',
+    '· 同一个动作、同一个意象，一段里只用一次；前面用过的比喻不要再用第二次',
+    '· 每次输出都要推进：给出新的动作、新的信息或新的对话，不要原地打转',
   ].join('\n');
 
   /** 作者改过就用作者的，没改过用这套预设 */
@@ -2243,7 +2270,7 @@ const AI = (() => {
       model: cfg.model,
       messages: opts.messages || buildMessages(opts),
       stream: true,
-      temperature: Number(cfg.temperature) || 0.9,
+      temperature: Number.isFinite(+opts.temperature) ? +opts.temperature : (Number(cfg.temperature) || 0.9),
     };
 
     let res;
@@ -3227,9 +3254,15 @@ const ChatView = (() => {
         ? '<span class="mini-btn is-on" style="cursor:default">已写入</span>'
         : '<button class="mini-btn" data-act="commit">写入剧情</button>'}
         <button class="mini-btn ${isBase ? 'is-on' : ''}" data-act="from">${isBase ? '续写基线 ✓' : '以这段续写'}</button>
+        <button class="mini-btn" data-act="regen">重写一版</button>
+        <button class="mini-btn" data-act="edit">改字</button>
         <button class="mini-btn" data-act="copy">复制</button>
         ${m.clipped ? '' : '<button class="mini-btn" data-act="setting">存为设定</button>'}
-      </div>` : '';
+        <button class="mini-btn mini-btn--danger" data-act="del">删掉</button>
+      </div>` : `
+      <div class="msg__acts" data-acts="${m.id}">
+        <button class="mini-btn mini-btn--danger" data-act="del">删掉</button>
+      </div>`;
     return `<div class="msg ${cls}" data-msg="${m.id}">
       <div class="msg__who">${who}${lenTag}${flavorTag}</div>
       <div class="msg__body">${hl(m.text)}</div>
@@ -3353,6 +3386,29 @@ const ChatView = (() => {
             openCommit(m);
           } else if (b.dataset.act === 'from') {
             setReplyTo(m);
+          } else if (b.dataset.act === 'regen') {
+            regen(m);
+          } else if (b.dataset.act === 'edit') {
+            App.sheet('改这一段', `
+              <div class="field__hint" style="margin-bottom:10px">直接改文字，改完点保存。改过的版本也能「重写一版」。</div>
+              <textarea class="textarea" id="edText" style="min-height:44vh">${esc(m.text)}</textarea>
+              <button class="btn" id="edSave" style="margin-top:10px">保存</button>
+            `, (r) => {
+              r.querySelector('#edSave').onclick = () => {
+                const tx = r.querySelector('#edText').value.trim();
+                if (!tx) return App.toast('不能改成空的');
+                m.text = tx;
+                Store.save();
+                App.closeSheet(); renderFlow(); App.toast('已改好');
+              };
+            });
+          } else if (b.dataset.act === 'del') {
+            const wrote = m.clipped ? '（它已经写进章节了，删掉这条对话不会影响正文）' : '';
+            if (!confirm(`删掉这条${wrote}？`)) return;
+            Store.chat.remove(m.id);
+            if (replyTo && replyTo.id === m.id) replyTo = null;
+            renderFlow();
+            App.toast('已删掉这条');
           }
         };
       });
@@ -3573,6 +3629,68 @@ const ChatView = (() => {
   }
 
 
+  /* ── 重新生成：同样的要求，换一种写法 ──
+     光"再跑一次"没用 —— 上下文一模一样，模型会吐回几乎相同的文本，
+     尤其是描写段落。所以要把上一版整个亮出来、明确要求换写法，并抬高温度。 */
+  async function regen(m) {
+    if (busy) return App.toast('正在生成，稍等');
+    const g = m.gen || {};
+    if (!g.mode) return App.toast('这一条没有记录生成方式，没法重写');
+
+    const variant = [
+      '【重写要求】',
+      '下面是上一版。用**完全不同的写法**重写这一段：',
+      '换动作、换意象、换句式、换叙述的切入点；不要复用上一版的任何句子，也不要只换同义词。',
+      '人物、情节走向、信息量保持不变 —— 只换写的路子。',
+      '',
+      '上一版：',
+      m.text.slice(0, 1500),
+    ].join('\n');
+    const extra = [g.extra, variant].filter(Boolean).join('\n\n');
+
+    busy = true;
+    abort = new AbortController();
+    setSendState('stop');
+
+    const holder = document.createElement('div');
+    holder.className = 'msg msg--ai';
+    holder.innerHTML = '<div class="msg__who">临文 · 重写中</div><div class="msg__body typing"><i></i><i></i><i></i></div>';
+    el.flow.appendChild(holder);
+    const body = holder.querySelector('.msg__body');
+    scrollEnd();
+
+    let acc = '', first = true;
+    try {
+      const full = await AI.generate({
+        ask: g.ask, chapterId: m.chapterId, mode: g.mode, extra, baseText: g.baseText,
+        temperature: Math.min(1.6, (Number(Store.get().config.temperature) || 0.9) + 0.25),
+        signal: abort.signal,
+        onDelta: (piece) => {
+          if (first) { body.textContent = ''; body.classList.remove('typing'); first = false; }
+          acc += piece;
+          body.textContent = acc;
+          body.classList.add('reader__caret');
+          scrollEnd();
+        },
+      });
+      body.classList.remove('reader__caret');
+      holder.remove();
+      const text = (full || acc || '').trim();
+      if (!text) return App.toast('没有返回内容');
+      Store.chat.push('ai', text, { chapterId: m.chapterId, gen: g, from: m.id });
+      renderFlow();
+      App.toast('已重写一版 —— 对比看看留哪条');
+    } catch (e) {
+      body.classList.remove('reader__caret');
+      holder.remove();
+      if (e && e.name === 'AbortError') App.toast('已停止');
+      else App.toast(String(e && e.message || e), 3400);
+      renderFlow();
+    } finally {
+      busy = false; abort = null; setSendState('send');
+    }
+  }
+
   /* ── 发送 ── */
   async function send(askOverride, modeOverride) {
     if (busy) return;
@@ -3627,7 +3745,10 @@ const ChatView = (() => {
         Store.chat.push('note', '这次没有返回内容。检查模型名或稍后重试。');
       } else {
         holder.remove();
-        const msg = Store.chat.push('ai', text, { chapterId: target() ? target().id : null });
+        const msg = Store.chat.push('ai', text, {
+          chapterId: target() ? target().id : null,
+          gen: { ask, mode, extra, baseText },   // 记住这次是怎么生成的，之后可以重写
+        });
         // 开了自动续接就直接落盘，不再弹层
         if ((Store.get().config.commitMode || 'ask') === 'auto') autoAppend(msg);
       }

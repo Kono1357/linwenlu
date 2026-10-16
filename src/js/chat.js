@@ -217,9 +217,15 @@ const ChatView = (() => {
         ? '<span class="mini-btn is-on" style="cursor:default">已写入</span>'
         : '<button class="mini-btn" data-act="commit">写入剧情</button>'}
         <button class="mini-btn ${isBase ? 'is-on' : ''}" data-act="from">${isBase ? '续写基线 ✓' : '以这段续写'}</button>
+        <button class="mini-btn" data-act="regen">重写一版</button>
+        <button class="mini-btn" data-act="edit">改字</button>
         <button class="mini-btn" data-act="copy">复制</button>
         ${m.clipped ? '' : '<button class="mini-btn" data-act="setting">存为设定</button>'}
-      </div>` : '';
+        <button class="mini-btn mini-btn--danger" data-act="del">删掉</button>
+      </div>` : `
+      <div class="msg__acts" data-acts="${m.id}">
+        <button class="mini-btn mini-btn--danger" data-act="del">删掉</button>
+      </div>`;
     return `<div class="msg ${cls}" data-msg="${m.id}">
       <div class="msg__who">${who}${lenTag}${flavorTag}</div>
       <div class="msg__body">${hl(m.text)}</div>
@@ -343,6 +349,29 @@ const ChatView = (() => {
             openCommit(m);
           } else if (b.dataset.act === 'from') {
             setReplyTo(m);
+          } else if (b.dataset.act === 'regen') {
+            regen(m);
+          } else if (b.dataset.act === 'edit') {
+            App.sheet('改这一段', `
+              <div class="field__hint" style="margin-bottom:10px">直接改文字，改完点保存。改过的版本也能「重写一版」。</div>
+              <textarea class="textarea" id="edText" style="min-height:44vh">${esc(m.text)}</textarea>
+              <button class="btn" id="edSave" style="margin-top:10px">保存</button>
+            `, (r) => {
+              r.querySelector('#edSave').onclick = () => {
+                const tx = r.querySelector('#edText').value.trim();
+                if (!tx) return App.toast('不能改成空的');
+                m.text = tx;
+                Store.save();
+                App.closeSheet(); renderFlow(); App.toast('已改好');
+              };
+            });
+          } else if (b.dataset.act === 'del') {
+            const wrote = m.clipped ? '（它已经写进章节了，删掉这条对话不会影响正文）' : '';
+            if (!confirm(`删掉这条${wrote}？`)) return;
+            Store.chat.remove(m.id);
+            if (replyTo && replyTo.id === m.id) replyTo = null;
+            renderFlow();
+            App.toast('已删掉这条');
           }
         };
       });
@@ -563,6 +592,68 @@ const ChatView = (() => {
   }
 
 
+  /* ── 重新生成：同样的要求，换一种写法 ──
+     光"再跑一次"没用 —— 上下文一模一样，模型会吐回几乎相同的文本，
+     尤其是描写段落。所以要把上一版整个亮出来、明确要求换写法，并抬高温度。 */
+  async function regen(m) {
+    if (busy) return App.toast('正在生成，稍等');
+    const g = m.gen || {};
+    if (!g.mode) return App.toast('这一条没有记录生成方式，没法重写');
+
+    const variant = [
+      '【重写要求】',
+      '下面是上一版。用**完全不同的写法**重写这一段：',
+      '换动作、换意象、换句式、换叙述的切入点；不要复用上一版的任何句子，也不要只换同义词。',
+      '人物、情节走向、信息量保持不变 —— 只换写的路子。',
+      '',
+      '上一版：',
+      m.text.slice(0, 1500),
+    ].join('\n');
+    const extra = [g.extra, variant].filter(Boolean).join('\n\n');
+
+    busy = true;
+    abort = new AbortController();
+    setSendState('stop');
+
+    const holder = document.createElement('div');
+    holder.className = 'msg msg--ai';
+    holder.innerHTML = '<div class="msg__who">临文 · 重写中</div><div class="msg__body typing"><i></i><i></i><i></i></div>';
+    el.flow.appendChild(holder);
+    const body = holder.querySelector('.msg__body');
+    scrollEnd();
+
+    let acc = '', first = true;
+    try {
+      const full = await AI.generate({
+        ask: g.ask, chapterId: m.chapterId, mode: g.mode, extra, baseText: g.baseText,
+        temperature: Math.min(1.6, (Number(Store.get().config.temperature) || 0.9) + 0.25),
+        signal: abort.signal,
+        onDelta: (piece) => {
+          if (first) { body.textContent = ''; body.classList.remove('typing'); first = false; }
+          acc += piece;
+          body.textContent = acc;
+          body.classList.add('reader__caret');
+          scrollEnd();
+        },
+      });
+      body.classList.remove('reader__caret');
+      holder.remove();
+      const text = (full || acc || '').trim();
+      if (!text) return App.toast('没有返回内容');
+      Store.chat.push('ai', text, { chapterId: m.chapterId, gen: g, from: m.id });
+      renderFlow();
+      App.toast('已重写一版 —— 对比看看留哪条');
+    } catch (e) {
+      body.classList.remove('reader__caret');
+      holder.remove();
+      if (e && e.name === 'AbortError') App.toast('已停止');
+      else App.toast(String(e && e.message || e), 3400);
+      renderFlow();
+    } finally {
+      busy = false; abort = null; setSendState('send');
+    }
+  }
+
   /* ── 发送 ── */
   async function send(askOverride, modeOverride) {
     if (busy) return;
@@ -617,7 +708,10 @@ const ChatView = (() => {
         Store.chat.push('note', '这次没有返回内容。检查模型名或稍后重试。');
       } else {
         holder.remove();
-        const msg = Store.chat.push('ai', text, { chapterId: target() ? target().id : null });
+        const msg = Store.chat.push('ai', text, {
+          chapterId: target() ? target().id : null,
+          gen: { ask, mode, extra, baseText },   // 记住这次是怎么生成的，之后可以重写
+        });
         // 开了自动续接就直接落盘，不再弹层
         if ((Store.get().config.commitMode || 'ask') === 'auto') autoAppend(msg);
       }

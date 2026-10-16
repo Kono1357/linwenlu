@@ -506,6 +506,15 @@ const Store = (() => {
       return m;
     },
     clear() { book().chat = []; touch('chat-clear'); },
+    /** 删掉一条 */
+    remove(id) {
+      const b = book();
+      const i = b.chat.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      b.chat.splice(i, 1);
+      touch('chat-remove', { id });
+      return true;
+    },
     clearChapter(chapterId) {
       if (!chapterId) return 0;
       const b = book();

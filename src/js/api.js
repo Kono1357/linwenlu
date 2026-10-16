@@ -177,6 +177,9 @@ const AI = (() => {
     '· 这些词尽量别用：认真、光芒、摩挲、挑眉、不易察觉、勾起嘴角、深吸一口气、微微、一丝',
     '· 对话像真人说话：允许省略句、语气词、打断；长短句交错，不要一人一句轮着来',
     '· 每个角色要有辨识度：遮住名字也能看出是谁在说话',
+    '· 不许复述上文：前面已经写过的场景、动作、对话，不要再描一遍，直接往下写',
+    '· 同一个动作、同一个意象，一段里只用一次；前面用过的比喻不要再用第二次',
+    '· 每次输出都要推进：给出新的动作、新的信息或新的对话，不要原地打转',
   ].join('\n');
 
   /** 作者改过就用作者的，没改过用这套预设 */
@@ -298,7 +301,7 @@ const AI = (() => {
       model: cfg.model,
       messages: opts.messages || buildMessages(opts),
       stream: true,
-      temperature: Number(cfg.temperature) || 0.9,
+      temperature: Number.isFinite(+opts.temperature) ? +opts.temperature : (Number(cfg.temperature) || 0.9),
     };
 
     let res;

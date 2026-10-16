@@ -989,6 +989,63 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
+    // ㉟ 对话的增删改：能删单条、能重写、生成参数记录在案
+    report.steps.push({
+      step: 'msgops', check: await cdp.eval(`(function(){
+      try {
+        Store.chat.clear();
+        var t = Store.chapter.active() || Store.chapter.add({});
+        Store.chat.push('me', '写一段', { chapterId: t.id });
+        var m2 = Store.chat.push('ai', '第一版内容。', { chapterId: t.id, gen: { ask: '写一段', mode: 'chat' } });
+        var m3 = Store.chat.push('ai', '第二版内容。', { chapterId: t.id, gen: { ask: '写一段', mode: 'chat' } });
+        ChatView.refreshAll();
+
+        var n0 = document.querySelectorAll('#chatFlow .msg').length;
+        var delBtn = document.querySelector('#chatFlow [data-act="del"]');
+        var regenBtn = document.querySelector('#chatFlow [data-act="regen"]');
+
+        // 删掉最后一条，保留前面
+        Store.chat.remove(m3.id);
+        ChatView.renderFlow();
+        var n1 = document.querySelectorAll('#chatFlow .msg').length;
+        var left = Store.chat.all().map(function(x){ return x.text; });
+
+        return {
+          渲染条数: n0,
+          每条都能删: !!delBtn,
+          AI消息能重写: !!regenBtn,
+          删掉一条后: n1,
+          剩下的是: left.join(' / '),
+          生成参数记住了: !!(m2.gen && m2.gen.ask === '写一段'),
+          被删的那条真没了: Store.chat.all().every(function(x){ return x.id !== m3.id; })
+        };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
+    // ㊱ 抽屉高度不依赖 dvh（旧 iOS 上 dvh 无效，会让面板撑爆且滚不动）
+    report.steps.push({
+      step: 'sheetbox', check: await cdp.eval(`(function(){
+      try {
+        App.openModelSettings();
+        var p = document.querySelector('.sheet__panel');
+        var b = document.getElementById('sheetBody');
+        var pr = p.getBoundingClientRect();
+        var vh = window.innerHeight;
+        var cs = getComputedStyle(p);
+        var out = {
+          视口高: vh,
+          面板高: Math.round(pr.height),
+          面板没超出视口: pr.height <= vh + 1,
+          最大高度是百分比: /%/.test(cs.maxHeight) || cs.maxHeight === 'none',
+          内容比容器高: b.scrollHeight > b.clientHeight,
+          容器能滚: getComputedStyle(b).overflowY === 'auto',
+          body有minHeight0前提: getComputedStyle(b).minHeight === '0px'
+        };
+        App.closeSheet();
+        return out;
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {
