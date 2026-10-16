@@ -88,7 +88,21 @@ const App = (() => {
         <div class="field">
           <label class="field__label">温度 ${Number(c.temperature).toFixed(1)}</label>
           <input type="range" id="cfgTemp" min="0" max="1.6" step="0.1" value="${c.temperature}" style="width:100%">
+          <div class="field__hint">调高 → 更放得开，也更容易乱。一般 0.8～1.0。</div>
         </div>
+      </div>
+      <div class="field">
+        <label class="field__label">用词重复惩罚 ${Number(c.freqPenalty || 0).toFixed(1)}</label>
+        <input type="range" id="cfgFreq" min="0" max="1.5" step="0.1" value="${Number(c.freqPenalty || 0)}" style="width:100%">
+        <div class="field__hint">
+          调高 → <b>少重复已经用过的词</b>。写长场景老是那几句，可以给到 0.5～0.8。<br>
+          <span style="opacity:.75">这是从概率层面压重复，比在提示词里喊"不要重复"管用。</span>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field__label">话题新鲜度 ${Number(c.presPenalty || 0).toFixed(1)}</label>
+        <input type="range" id="cfgPres" min="0" max="1.5" step="0.1" value="${Number(c.presPenalty || 0)}" style="width:100%">
+        <div class="field__hint">调高 → 更愿意写新东西，而不是绕回刚写过的内容。</div>
       </div>
       <div class="field">
         <label class="field__label">文风约束（可以随便改）</label>
@@ -161,6 +175,12 @@ const App = (() => {
       const tempRange = g('#cfgTemp');
       const tempLabel = tempRange.previousElementSibling;
       tempRange.oninput = () => { tempLabel.textContent = '温度 ' + Number(tempRange.value).toFixed(1); };
+      const freqRange = g('#cfgFreq');
+      const freqLabel = freqRange.previousElementSibling;
+      freqRange.oninput = () => { freqLabel.textContent = '用词重复惩罚 ' + Number(freqRange.value).toFixed(1); };
+      const presRange = g('#cfgPres');
+      const presLabel = presRange.previousElementSibling;
+      presRange.oninput = () => { presLabel.textContent = '话题新鲜度 ' + Number(presRange.value).toFixed(1); };
 
       const rst = g('#cfgDeaiReset');
       if (rst) rst.onclick = () => {
@@ -178,6 +198,8 @@ const App = (() => {
           apiKey: g('#cfgKey').value.trim(),
           model: g('#cfgModel').value.trim() || 'deepseek-chat',
           temperature: Number(tempRange.value),
+          freqPenalty: Number(g('#cfgFreq').value) || 0,
+          presPenalty: Number(g('#cfgPres').value) || 0,
           style: g('#cfgStyle').value.trim(),
           ctxSettings: Number(g('#cfgSet').value) || 0,
           ctxTail: Number(g('#cfgTail').value) || 0,

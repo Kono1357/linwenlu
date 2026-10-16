@@ -27,6 +27,8 @@ const Store = (() => {
       apiKey: '',
       model: 'deepseek-chat',
       temperature: 0.9,
+      freqPenalty: 0.4,    // 用词重复惩罚：正值让模型少用已经用过的词（治"雷同"最直接）
+      presPenalty: 0.2,    // 话题新鲜度：正值鼓励说新的东西，而不是绕回旧内容
       style: '冷峻、白描、少形容词；对话不解释情绪；每段一到三句。',
       ctxSettings: 12,
       ctxPrev: 1,

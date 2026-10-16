@@ -1046,6 +1046,41 @@ class CDP {
       } catch (e) { return { error: String(e && e.message || e) }; }
     })()`) });
 
+    // ㊲ 防雷同：铁律条款齐不齐 + 采样参数是不是真的发出去了
+    report.steps.push({
+      step: 'antirepeat', check: await cdp.eval(`(async function(){
+      try {
+        var rules = AI.DEAI_RULES;
+        var c = {
+          不许复述上文: /不许复述上文/.test(rules),
+          换一套切入点: /换一套切入点/.test(rules),
+          同类反应限次: /最多两次/.test(rules),
+          节奏要有起伏: /节奏要有起伏/.test(rules),
+          句式禁令齐: /不是……而是……/.test(rules) && /综上所述/.test(rules) && /首先/.test(rules),
+          禁样板比喻: /羽毛/.test(rules) && /涟漪/.test(rules),
+          禁语气标签: /语气打标签/.test(rules),
+          禁内心戏: /内心戏/.test(rules),
+          禁滥用词: /摩挲/.test(rules) && /瞳孔/.test(rules)
+        };
+        // 拦下请求体，确认 penalty 真的带上了（不只是存在配置里）
+        var orig = window.fetch, got = null;
+        window.fetch = function (u, o) {
+          if (o && o.body) { try { got = JSON.parse(o.body); } catch (e) {} }
+          return Promise.reject(new Error('probe-stop'));
+        };
+        var oldKey = Store.get().config.apiKey;
+        Store.config.set({ apiKey: 'probe-key', freqPenalty: 0.4, presPenalty: 0.2 });
+        try { await AI.generate({ ask: 'x', chapterId: null, mode: 'chat' }); } catch (e) {}
+        window.fetch = orig;
+        Store.config.set({ apiKey: oldKey });
+        c.重复惩罚发出去了 = !!(got && got.frequency_penalty > 0);
+        c.新鲜度发出去了 = !!(got && got.presence_penalty > 0);
+        c.温度也带上 = !!(got && got.temperature > 0);
+        c.铁律进了提示词 = !!((AI.buildMessages({ ask: 'x', chapterId: null, mode: 'chat' })[0].content || '').indexOf('不许重复自己') >= 0);
+        return c;
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    })()`) });
+
     // 收 console 里的报错
     for (const e of cdp.events) {
       if (e.method === 'Runtime.exceptionThrown') {
